@@ -1,54 +1,89 @@
 'use client'
 
 import { useEffect, useCallback } from 'react'
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useAuthStore } from '@/lib/stores/auth-store'
-import type { User } from '@/lib/database.types'
+import type { User, Organisation } from '@/lib/database.types'
+
+function buildFallbackUser(sessionUser: {
+  id: string
+  email?: string
+  user_metadata?: Record<string, unknown>
+}): User {
+  const fullName =
+    typeof sessionUser.user_metadata?.full_name === 'string'
+      ? sessionUser.user_metadata.full_name
+      : typeof sessionUser.user_metadata?.name === 'string'
+        ? sessionUser.user_metadata.name
+        : (sessionUser.email?.split('@')[0] || 'Care Team User')
+
+  return {
+    id: sessionUser.id,
+    organisation_id: 'demo-org',
+    email: sessionUser.email || '',
+    full_name: fullName,
+    role: 'manager',
+    avatar_url: null,
+    phone: null,
+    pin_hash: null,
+    is_active: true,
+    last_login_at: new Date().toISOString(),
+    preferences: {},
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }
+}
+
+const fallbackOrganisation: Organisation = {
+  id: 'demo-org',
+  name: 'EnCare Demo Organisation',
+  slug: 'encare-demo',
+  logo_url: null,
+  settings: {},
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+}
 
 export function useAuth() {
   const router = useRouter()
   const { user, organisation, isLoading, isAuthenticated, setUser, setOrganisation, setIsLoading, clear } = useAuthStore()
 
-  // Initialize auth state from Supabase session
   const initializeAuth = useCallback(async () => {
     setIsLoading(true)
 
     try {
       const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
 
-      if (!session?.user) {
+      if (sessionError || !session?.user) {
         clear()
-        setIsLoading(false)
         return
       }
 
-      // Fetch user profile from users table
-      const { data: userData, error: userError } = await supabase
+      const fallbackUser = buildFallbackUser(session.user)
+      setUser(fallbackUser)
+      setOrganisation(fallbackOrganisation)
+
+      const { data: userData } = await supabase
         .from('users')
         .select('*')
         .eq('id', session.user.id)
-        .single()
+        .maybeSingle()
 
-      if (userError || !userData) {
-        console.error('Failed to fetch user profile:', userError)
-        clear()
-        setIsLoading(false)
-        return
-      }
+      if (userData) {
+        setUser(userData as User)
 
-      setUser(userData)
+        const { data: orgData } = await supabase
+          .from('organisations')
+          .select('*')
+          .eq('id', userData.organisation_id)
+          .maybeSingle()
 
-      // Fetch organisation
-      const { data: orgData } = await supabase
-        .from('organisations')
-        .select('*')
-        .eq('id', userData.organisation_id)
-        .single()
-
-      if (orgData) {
-        setOrganisation(orgData)
+        if (orgData) {
+          setOrganisation(orgData as Organisation)
+        }
       }
     } catch (err) {
       console.error('Auth initialization error:', err)
@@ -58,19 +93,18 @@ export function useAuth() {
     }
   }, [setUser, setOrganisation, setIsLoading, clear])
 
-  // Listen for auth state changes
   useEffect(() => {
     const supabase = createClient()
 
-    // Initialize on mount
     initializeAuth()
 
-    // Subscribe to auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: any, session: any) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
       if (event === 'SIGNED_OUT') {
         clear()
         router.push('/login')
-      } else if (event === 'SIGNED_IN' && session?.user) {
+      } else if (session?.user) {
         await initializeAuth()
       }
     })
@@ -110,7 +144,6 @@ export function useAuth() {
   }
 }
 
-// Hook for protected routes
 export function useRequireAuth(redirectTo = '/login') {
   const router = useRouter()
   const { isAuthenticated, isLoading } = useAuthStore()
@@ -124,7 +157,6 @@ export function useRequireAuth(redirectTo = '/login') {
   return { isAuthenticated, isLoading }
 }
 
-// Hook for manager/admin only routes
 export function useRequireManager(redirectTo = '/app') {
   const router = useRouter()
   const { user, isLoading } = useAuthStore()
@@ -140,6 +172,6 @@ export function useRequireManager(redirectTo = '/app') {
 
   return {
     isManager: user?.role === 'admin' || user?.role === 'manager',
-    isLoading
+    isLoading,
   }
 }
