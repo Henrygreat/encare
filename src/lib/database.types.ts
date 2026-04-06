@@ -12,6 +12,7 @@ export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent'
 export type LogType = 'meal' | 'drink' | 'medication' | 'toileting' | 'mood' | 'personal_care' | 'activity' | 'observation' | 'incident' | 'note'
 export type IncidentSeverity = 'low' | 'medium' | 'high' | 'critical'
 export type SyncStatus = 'synced' | 'pending' | 'failed'
+export type SubscriptionStatus = 'incomplete' | 'incomplete_expired' | 'trialing' | 'active' | 'past_due' | 'canceled' | 'unpaid' | 'paused'
 
 export interface Database {
   public: {
@@ -577,6 +578,135 @@ export interface Database {
         }
         Relationships: []
       }
+      billing_customers: {
+        Row: {
+          id: string
+          organisation_id: string
+          provider: string
+          customer_id: string
+          email: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organisation_id: string
+          provider?: string
+          customer_id: string
+          email?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organisation_id?: string
+          provider?: string
+          customer_id?: string
+          email?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      subscriptions: {
+        Row: {
+          id: string
+          organisation_id: string
+          provider: string
+          customer_id: string
+          subscription_id: string
+          price_id: string | null
+          status: SubscriptionStatus
+          current_period_start: string | null
+          current_period_end: string | null
+          cancel_at_period_end: boolean
+          trial_ends_at: string | null
+          canceled_at: string | null
+          raw: Json
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organisation_id: string
+          provider?: string
+          customer_id: string
+          subscription_id: string
+          price_id?: string | null
+          status?: SubscriptionStatus
+          current_period_start?: string | null
+          current_period_end?: string | null
+          cancel_at_period_end?: boolean
+          trial_ends_at?: string | null
+          canceled_at?: string | null
+          raw?: Json
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organisation_id?: string
+          provider?: string
+          customer_id?: string
+          subscription_id?: string
+          price_id?: string | null
+          status?: SubscriptionStatus
+          current_period_start?: string | null
+          current_period_end?: string | null
+          cancel_at_period_end?: boolean
+          trial_ends_at?: string | null
+          canceled_at?: string | null
+          raw?: Json
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      plans: {
+        Row: {
+          id: string
+          code: string
+          name: string
+          description: string | null
+          stripe_price_id: string
+          price_amount: number
+          currency: string
+          interval: string
+          features: Json
+          active: boolean
+          sort_order: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          code: string
+          name: string
+          description?: string | null
+          stripe_price_id: string
+          price_amount: number
+          currency?: string
+          interval?: string
+          features?: Json
+          active?: boolean
+          sort_order?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          code?: string
+          name?: string
+          description?: string | null
+          stripe_price_id?: string
+          price_amount?: number
+          currency?: string
+          interval?: string
+          features?: Json
+          active?: boolean
+          sort_order?: number
+          created_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       resident_timeline: {
@@ -647,6 +777,18 @@ export interface Database {
         Args: Record<string, never>
         Returns: boolean
       }
+      has_active_subscription: {
+        Args: { org_id: string }
+        Returns: boolean
+      }
+      org_has_active_subscription: {
+        Args: Record<string, never>
+        Returns: boolean
+      }
+      get_org_subscription_status: {
+        Args: { org_id: string }
+        Returns: SubscriptionStatus
+      }
     }
   }
 }
@@ -675,3 +817,13 @@ export type IncidentInsert = Database['public']['Tables']['incidents']['Insert']
 
 // Timeline event type
 export type TimelineEvent = Database['public']['Views']['resident_timeline']['Row']
+
+// Billing types
+export type BillingCustomer = Database['public']['Tables']['billing_customers']['Row']
+export type Subscription = Database['public']['Tables']['subscriptions']['Row']
+export type Plan = Database['public']['Tables']['plans']['Row']
+
+// Billing insert types
+export type BillingCustomerInsert = Database['public']['Tables']['billing_customers']['Insert']
+export type SubscriptionInsert = Database['public']['Tables']['subscriptions']['Insert']
+export type PlanInsert = Database['public']['Tables']['plans']['Insert']
