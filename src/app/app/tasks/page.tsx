@@ -27,7 +27,11 @@ export default function TasksPage() {
   const [error, setError] = useState<string>("");
 
   const loadTasks = async () => {
-    if (!organisation?.id) return;
+    if (!organisation?.id) {
+      setError("No organisation is linked to this account.");
+      setIsLoading(false);
+      return;
+    }
 
     setIsLoading(true);
     setError("");
@@ -54,6 +58,7 @@ export default function TasksPage() {
         const resident = Array.isArray(task.residents)
           ? task.residents[0]
           : task.residents;
+
         const residentName = resident
           ? `${resident.preferred_name || resident.first_name} ${resident.last_name}`
           : undefined;
@@ -74,9 +79,15 @@ export default function TasksPage() {
   };
 
   useEffect(() => {
-    if (!authLoading && organisation?.id) {
-      void loadTasks();
+    if (authLoading) return;
+
+    if (!organisation?.id) {
+      setError("No organisation is linked to this account.");
+      setIsLoading(false);
+      return;
     }
+
+    void loadTasks();
   }, [authLoading, organisation?.id]);
 
   const handleComplete = async (task: Task) => {
@@ -209,7 +220,17 @@ export default function TasksPage() {
     [tasks],
   );
 
-  if (authLoading || isLoading) {
+  if (authLoading) {
+    return (
+      <PageContainer header={<MobileHeader title="Tasks" />}>
+        <div className="py-12 text-center text-gray-500">
+          Loading account...
+        </div>
+      </PageContainer>
+    );
+  }
+
+  if (isLoading) {
     return (
       <PageContainer header={<MobileHeader title="Tasks" />}>
         <div className="py-12 text-center text-gray-500">Loading tasks...</div>
@@ -225,7 +246,7 @@ export default function TasksPage() {
         </div>
       ) : null}
 
-      <div className="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide">
+      <div className="mb-4 flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
         <TabButton
           active={activeTab === "due"}
           onClick={() => setActiveTab("due")}
@@ -259,7 +280,7 @@ export default function TasksPage() {
         <div className="space-y-4">
           {overdueTasks.length > 0 && (
             <div>
-              <div className="flex items-center gap-2 mb-2">
+              <div className="mb-2 flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4 text-care-red" />
                 <h3 className="font-semibold text-care-red">
                   Overdue ({overdueTasks.length})
@@ -272,13 +293,14 @@ export default function TasksPage() {
                 onComplete={handleComplete}
                 onSnooze={handleSnooze}
                 onEscalate={handleEscalate}
+                actionLoadingId={actionLoadingId}
               />
             </div>
           )}
 
           {upcomingTasks.length > 0 && (
             <div>
-              <h3 className="font-semibold text-gray-700 mb-2">
+              <h3 className="mb-2 font-semibold text-gray-700">
                 Coming Up ({upcomingTasks.length})
               </h3>
 
@@ -287,13 +309,14 @@ export default function TasksPage() {
                 onTaskClick={(task) => router.push(`/app/tasks/${task.id}`)}
                 onComplete={handleComplete}
                 onSnooze={handleSnooze}
+                actionLoadingId={actionLoadingId}
               />
             </div>
           )}
 
           {overdueTasks.length === 0 && upcomingTasks.length === 0 && (
-            <div className="text-center py-12 text-gray-500">
-              <CheckCircle className="h-12 w-12 mx-auto mb-3 text-care-green" />
+            <div className="py-12 text-center text-gray-500">
+              <CheckCircle className="mx-auto mb-3 h-12 w-12 text-care-green" />
               <p className="font-medium">All caught up!</p>
               <p className="text-sm">No pending tasks</p>
             </div>
@@ -306,6 +329,7 @@ export default function TasksPage() {
           tasks={completedTasks}
           onTaskClick={(task) => router.push(`/app/tasks/${task.id}`)}
           emptyMessage="No completed tasks today"
+          actionLoadingId={actionLoadingId}
         />
       )}
 
@@ -314,6 +338,7 @@ export default function TasksPage() {
           tasks={snoozedTasks}
           onTaskClick={(task) => router.push(`/app/tasks/${task.id}`)}
           emptyMessage="No snoozed tasks"
+          actionLoadingId={actionLoadingId}
         />
       )}
     </PageContainer>
@@ -339,7 +364,7 @@ function TabButton({
     <button
       onClick={onClick}
       className={`
-        flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors flex-shrink-0
+        flex flex-shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors
         ${
           active
             ? alert
@@ -354,7 +379,7 @@ function TabButton({
       {count !== undefined && count > 0 && (
         <span
           className={`
-            px-1.5 py-0.5 rounded-full text-xs
+            rounded-full px-1.5 py-0.5 text-xs
             ${active ? "bg-white/20" : "bg-surface-200"}
           `}
         >
