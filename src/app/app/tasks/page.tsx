@@ -23,7 +23,7 @@ export default function TasksPage() {
   const [activeTab, setActiveTab] = useState<TabType>("due");
   const [tasks, setTasks] = useState<TaskWithResident[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [, setActionLoadingId] = useState<string | null>(null);
   const [error, setError] = useState<string>("");
 
   const loadTasks = async () => {
@@ -293,7 +293,6 @@ export default function TasksPage() {
                 onComplete={handleComplete}
                 onSnooze={handleSnooze}
                 onEscalate={handleEscalate}
-                actionLoadingId={actionLoadingId}
               />
             </div>
           )}
@@ -309,7 +308,6 @@ export default function TasksPage() {
                 onTaskClick={(task) => router.push(`/app/tasks/${task.id}`)}
                 onComplete={handleComplete}
                 onSnooze={handleSnooze}
-                actionLoadingId={actionLoadingId}
               />
             </div>
           )}
@@ -329,7 +327,6 @@ export default function TasksPage() {
           tasks={completedTasks}
           onTaskClick={(task) => router.push(`/app/tasks/${task.id}`)}
           emptyMessage="No completed tasks today"
-          actionLoadingId={actionLoadingId}
         />
       )}
 
@@ -338,7 +335,6 @@ export default function TasksPage() {
           tasks={snoozedTasks}
           onTaskClick={(task) => router.push(`/app/tasks/${task.id}`)}
           emptyMessage="No snoozed tasks"
-          actionLoadingId={actionLoadingId}
         />
       )}
     </PageContainer>
