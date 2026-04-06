@@ -1,5 +1,5 @@
 import Stripe from 'stripe'
-import { getStripeInstance, getTrialDays, isTrialEnabled, PLANS, type PlanCode } from './config'
+import { getStripeInstance, getTrialDays, isTrialEnabled } from './config'
 import { createClient } from '@supabase/supabase-js'
 
 const getServiceRoleClient = () => {
@@ -26,7 +26,6 @@ export async function getOrCreateStripeCustomer(
   const stripe = getStripeInstance()
   const supabase = getServiceRoleClient()
 
-  // Check if customer already exists
   const { data: existingCustomer } = await supabase
     .from('billing_customers')
     .select('customer_id')
@@ -37,7 +36,6 @@ export async function getOrCreateStripeCustomer(
     return existingCustomer.customer_id
   }
 
-  // Create new Stripe customer
   const customer = await stripe.customers.create({
     email,
     name: organisationName,
@@ -46,12 +44,16 @@ export async function getOrCreateStripeCustomer(
     },
   })
 
-  // Save to database
-  await supabase.from('billing_customers').insert({
+  const { error } = await supabase.from('billing_customers').insert({
     organisation_id: organisationId,
     customer_id: customer.id,
     email,
   })
+
+  if (error) {
+    console.error('Error saving billing customer:', error)
+    throw error
+  }
 
   return customer.id
 }
@@ -65,10 +67,9 @@ export async function createCheckoutSession(
 ): Promise<Stripe.Checkout.Session> {
   const stripe = getStripeInstance()
 
-  const sessionParams: Stripe.Checkout.SessionCreateParams = {
+  const sessionParams: Parameters<typeof stripe.checkout.sessions.create>[0] = {
     customer: customerId,
     mode: 'subscription',
-    payment_method_types: ['card'],
     line_items: [
       {
         price: priceId,
@@ -89,12 +90,14 @@ export async function createCheckoutSession(
     billing_address_collection: 'required',
   }
 
-  // Add trial if enabled
   if (isTrialEnabled()) {
-    sessionParams.subscription_data!.trial_period_days = getTrialDays()
+    sessionParams.subscription_data = {
+      ...sessionParams.subscription_data,
+      trial_period_days: getTrialDays(),
+    }
   }
 
-  return stripe.checkout.sessions.create(sessionParams)
+  return await stripe.checkout.sessions.create(sessionParams)
 }
 
 export async function createCustomerPortalSession(
@@ -103,7 +106,7 @@ export async function createCustomerPortalSession(
 ): Promise<Stripe.BillingPortal.Session> {
   const stripe = getStripeInstance()
 
-  return stripe.billingPortal.sessions.create({
+  return await stripe.billingPortal.sessions.create({
     customer: customerId,
     return_url: returnUrl,
   })
@@ -112,13 +115,18 @@ export async function createCustomerPortalSession(
 export async function getSubscriptionByOrganisationId(organisationId: string) {
   const supabase = getServiceRoleClient()
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('subscriptions')
     .select('*')
     .eq('organisation_id', organisationId)
     .order('created_at', { ascending: false })
     .limit(1)
     .single()
+
+  if (error && error.code !== 'PGRST116') {
+    console.error('Error fetching subscription:', error)
+    throw error
+  }
 
   return data
 }
@@ -136,15 +144,21 @@ export async function upsertSubscription(
     return
   }
 
+  const item = subscription.items.data[0]
+
   const subscriptionData = {
     organisation_id: orgId,
     provider: 'stripe',
-    customer_id: subscription.customer as string,
+    customer_id: typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id,
     subscription_id: subscription.id,
-    price_id: subscription.items.data[0]?.price.id || null,
+    price_id: item?.price?.id || null,
     status: subscription.status,
-    current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-    current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+    current_period_start: item?.current_period_start
+      ? new Date(item.current_period_start * 1000).toISOString()
+      : null,
+    current_period_end: item?.current_period_end
+      ? new Date(item.current_period_end * 1000).toISOString()
+      : null,
     cancel_at_period_end: subscription.cancel_at_period_end,
     trial_ends_at: subscription.trial_end
       ? new Date(subscription.trial_end * 1000).toISOString()
@@ -170,7 +184,7 @@ export async function upsertSubscription(
 export async function cancelSubscription(subscriptionId: string): Promise<Stripe.Subscription> {
   const stripe = getStripeInstance()
 
-  return stripe.subscriptions.update(subscriptionId, {
+  return await stripe.subscriptions.update(subscriptionId, {
     cancel_at_period_end: true,
   })
 }
@@ -178,7 +192,7 @@ export async function cancelSubscription(subscriptionId: string): Promise<Stripe
 export async function reactivateSubscription(subscriptionId: string): Promise<Stripe.Subscription> {
   const stripe = getStripeInstance()
 
-  return stripe.subscriptions.update(subscriptionId, {
+  return await stripe.subscriptions.update(subscriptionId, {
     cancel_at_period_end: false,
   })
 }
@@ -186,11 +200,16 @@ export async function reactivateSubscription(subscriptionId: string): Promise<St
 export async function getCustomerIdByOrganisationId(organisationId: string): Promise<string | null> {
   const supabase = getServiceRoleClient()
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('billing_customers')
     .select('customer_id')
     .eq('organisation_id', organisationId)
     .single()
+
+  if (error && error.code !== 'PGRST116') {
+    console.error('Error fetching billing customer:', error)
+    throw error
+  }
 
   return data?.customer_id || null
 }
@@ -200,8 +219,6 @@ export function isSubscriptionActive(status: string): boolean {
 }
 
 export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
-  const supabase = getServiceRoleClient()
-
   switch (event.type) {
     case 'checkout.session.completed': {
       const session = event.data.object as Stripe.Checkout.Session
@@ -209,20 +226,18 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
       if (session.mode === 'subscription' && session.subscription) {
         const stripe = getStripeInstance()
         const subscription = await stripe.subscriptions.retrieve(
-          session.subscription as string
+          typeof session.subscription === 'string'
+            ? session.subscription
+            : session.subscription.id
         )
+
         await upsertSubscription(subscription, session.metadata?.organisation_id)
       }
       break
     }
 
     case 'customer.subscription.created':
-    case 'customer.subscription.updated': {
-      const subscription = event.data.object as Stripe.Subscription
-      await upsertSubscription(subscription)
-      break
-    }
-
+    case 'customer.subscription.updated':
     case 'customer.subscription.deleted': {
       const subscription = event.data.object as Stripe.Subscription
       await upsertSubscription(subscription)
@@ -231,8 +246,6 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
 
     case 'invoice.paid': {
       const invoice = event.data.object as Stripe.Invoice
-      // Subscription is already handled by customer.subscription.updated
-      // Log for audit purposes
       console.log(`Invoice paid: ${invoice.id} for customer: ${invoice.customer}`)
       break
     }
@@ -240,8 +253,6 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
     case 'invoice.payment_failed': {
       const invoice = event.data.object as Stripe.Invoice
       console.error(`Invoice payment failed: ${invoice.id} for customer: ${invoice.customer}`)
-      // The subscription status will be updated via customer.subscription.updated
-      // You could add additional notification logic here
       break
     }
 
