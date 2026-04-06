@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -14,147 +14,129 @@ import {
 import { MobileHeader, PageContainer } from '@/components/layout/mobile-header'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Chip } from '@/components/ui/chip'
 import { Avatar } from '@/components/ui/avatar'
 import { SyncStatus } from '@/components/ui/sync-status'
 import { TaskCard } from '@/components/ui/task-card'
-import { cn, formatDate } from '@/lib/utils'
-import type { Resident, Task } from '@/lib/database.types'
+import { formatDate } from '@/lib/utils'
+import { useResidents, type ResidentWithStatus } from '@/lib/hooks/use-residents'
+import { useTodayLogs } from '@/lib/hooks/use-logs'
+import { createClient } from '@/lib/supabase/client'
+import { useAuth } from '@/lib/hooks/use-auth'
+import type { Task } from '@/lib/database.types'
 
-// Demo data for UI development
-const DEMO_RESIDENTS: Array<Resident & { hasAlert?: boolean }> = [
-  {
-    id: '1',
-    organisation_id: 'org1',
-    first_name: 'Margaret',
-    last_name: 'Thompson',
-    preferred_name: 'Maggie',
-    room_number: '101',
-    photo_url: null,
-    date_of_birth: '1940-03-15',
-    admission_date: '2023-01-10',
-    status: 'active',
-    emergency_contact: {},
-    medical_info: {},
-    dietary_requirements: 'Soft foods',
-    mobility_notes: 'Wheelchair user',
-    communication_needs: null,
-    risk_flags: [],
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    hasAlert: true,
-  },
-  {
-    id: '2',
-    organisation_id: 'org1',
-    first_name: 'Robert',
-    last_name: 'Wilson',
-    preferred_name: 'Bob',
-    room_number: '105',
-    photo_url: null,
-    date_of_birth: '1938-07-22',
-    admission_date: '2022-08-15',
-    status: 'active',
-    emergency_contact: {},
-    medical_info: {},
-    dietary_requirements: null,
-    mobility_notes: 'Walking frame',
-    communication_needs: 'Hard of hearing',
-    risk_flags: [],
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: '3',
-    organisation_id: 'org1',
-    first_name: 'Dorothy',
-    last_name: 'Brown',
-    preferred_name: null,
-    room_number: '108',
-    photo_url: null,
-    date_of_birth: '1945-11-08',
-    admission_date: '2023-06-20',
-    status: 'active',
-    emergency_contact: {},
-    medical_info: {},
-    dietary_requirements: 'Diabetic diet',
-    mobility_notes: null,
-    communication_needs: null,
-    risk_flags: [],
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-]
-
-const DEMO_TASKS: Array<Task & { resident_name?: string }> = [
-  {
-    id: 't1',
-    organisation_id: 'org1',
-    resident_id: '1',
-    assigned_to: 'user1',
-    created_by: 'user1',
-    title: 'Morning medication',
-    description: 'Administer morning meds including blood pressure',
-    task_type: 'medication',
-    priority: 'high',
-    status: 'pending',
-    due_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(), // 30 mins ago - overdue
-    completed_at: null,
-    completed_by: null,
-    snoozed_until: null,
-    snooze_reason: null,
-    escalated_at: null,
-    escalated_to: null,
-    recurrence_rule: null,
-    parent_task_id: null,
-    metadata: {},
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    resident_name: 'Maggie Thompson',
-  },
-  {
-    id: 't2',
-    organisation_id: 'org1',
-    resident_id: '2',
-    assigned_to: 'user1',
-    created_by: 'user1',
-    title: 'Assist with breakfast',
-    description: null,
-    task_type: 'meal',
-    priority: 'medium',
-    status: 'pending',
-    due_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(), // 30 mins from now
-    completed_at: null,
-    completed_by: null,
-    snoozed_until: null,
-    snooze_reason: null,
-    escalated_at: null,
-    escalated_to: null,
-    recurrence_rule: null,
-    parent_task_id: null,
-    metadata: {},
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    resident_name: 'Bob Wilson',
-  },
-]
+type TaskWithResident = Task & { resident_name?: string }
 
 export default function MyShiftPage() {
   const router = useRouter()
+  const { user, organisation, isLoading: authLoading } = useAuth()
+  const { residents, isLoading: residentsLoading } = useResidents()
+  const { logs, isLoading: logsLoading } = useTodayLogs()
   const [currentTime, setCurrentTime] = useState(new Date())
+  const [tasks, setTasks] = useState<TaskWithResident[]>([])
+  const [tasksLoading, setTasksLoading] = useState(true)
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 60000)
     return () => clearInterval(timer)
   }, [])
 
-  const overdueTasks = DEMO_TASKS.filter(
-    t => t.status === 'pending' && new Date(t.due_at) < new Date()
+  // Load tasks
+  useEffect(() => {
+    async function loadTasks() {
+      if (!organisation?.id || !user?.id) return
+
+      setTasksLoading(true)
+      try {
+        const supabase = createClient()
+        const { data, error } = await supabase
+          .from('tasks')
+          .select(`
+            *,
+            residents (
+              first_name,
+              last_name,
+              preferred_name
+            )
+          `)
+          .eq('organisation_id', organisation.id)
+          .in('status', ['pending', 'snoozed'])
+          .order('due_at', { ascending: true })
+          .limit(20)
+
+        if (error) throw error
+
+        const mapped: TaskWithResident[] = (data || []).map((task: any) => {
+          const resident = Array.isArray(task.residents) ? task.residents[0] : task.residents
+          const residentName = resident
+            ? `${resident.preferred_name || resident.first_name} ${resident.last_name}`
+            : undefined
+          return { ...task, resident_name: residentName }
+        })
+
+        setTasks(mapped)
+      } catch (err) {
+        console.error('Failed to load tasks:', err)
+      } finally {
+        setTasksLoading(false)
+      }
+    }
+
+    if (!authLoading && organisation?.id) {
+      loadTasks()
+    }
+  }, [authLoading, organisation?.id, user?.id])
+
+  const now = new Date()
+
+  const overdueTasks = useMemo(
+    () => tasks.filter(t => t.status === 'pending' && t.due_at && new Date(t.due_at) < now),
+    [tasks]
   )
-  const upcomingTasks = DEMO_TASKS.filter(
-    t => t.status === 'pending' && new Date(t.due_at) >= new Date()
+
+  const upcomingTasks = useMemo(
+    () => tasks.filter(t => t.status === 'pending' && t.due_at && new Date(t.due_at) >= now),
+    [tasks]
   )
-  const residentsWithAlerts = DEMO_RESIDENTS.filter(r => r.hasAlert)
+
+  const residentsWithAlerts = useMemo(
+    () => residents.filter(r => r.statuses && r.statuses.length > 0),
+    [residents]
+  )
+
+  const assignedResidents = useMemo(
+    () => residents.filter(r => r.isAssigned),
+    [residents]
+  )
+
+  // Residents to show (assigned first, or all if none assigned)
+  const displayResidents = assignedResidents.length > 0 ? assignedResidents : residents.slice(0, 6)
+
+  const handleCompleteTask = async (task: Task) => {
+    if (!user?.id) return
+
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('tasks')
+        .update({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          completed_by: user.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', task.id)
+
+      if (error) throw error
+
+      // Refresh tasks
+      setTasks(prev => prev.filter(t => t.id !== task.id))
+    } catch (err) {
+      console.error('Failed to complete task:', err)
+      alert('Failed to complete task')
+    }
+  }
+
+  const isLoading = authLoading || residentsLoading || tasksLoading
 
   return (
     <PageContainer
@@ -174,7 +156,7 @@ export default function MyShiftPage() {
               Ready to log care?
             </h2>
             <p className="text-primary-100 text-sm">
-              {DEMO_RESIDENTS.length} residents assigned today
+              {isLoading ? 'Loading...' : `${displayResidents.length} residents ${assignedResidents.length > 0 ? 'assigned' : 'available'}`}
             </p>
           </div>
           <Link href="/app/residents">
@@ -187,7 +169,7 @@ export default function MyShiftPage() {
       </Card>
 
       {/* Alerts Section */}
-      {(overdueTasks.length > 0 || residentsWithAlerts.length > 0) && (
+      {!isLoading && (overdueTasks.length > 0 || residentsWithAlerts.length > 0) && (
         <Card className="mb-4 border-care-red bg-red-50" padding="md">
           <CardHeader>
             <CardTitle className="text-care-red flex items-center gap-2">
@@ -218,7 +200,7 @@ export default function MyShiftPage() {
                   <ChevronRight className="h-5 w-5 text-gray-400" />
                 </Link>
               )}
-              {residentsWithAlerts.map(resident => (
+              {residentsWithAlerts.slice(0, 3).map(resident => (
                 <Link
                   key={resident.id}
                   href={`/app/residents/${resident.id}`}
@@ -235,7 +217,7 @@ export default function MyShiftPage() {
                         {resident.preferred_name || resident.first_name} {resident.last_name}
                       </p>
                       <p className="text-sm text-gray-500">
-                        No meal logged today
+                        {resident.statuses?.[0]?.label || 'Needs attention'}
                       </p>
                     </div>
                   </div>
@@ -259,14 +241,23 @@ export default function MyShiftPage() {
           </Link>
         </CardHeader>
         <CardContent>
-          {upcomingTasks.length > 0 ? (
+          {tasksLoading ? (
+            <div className="space-y-3">
+              {[1, 2].map((i) => (
+                <div key={i} className="animate-pulse rounded-xl border border-surface-200 p-3">
+                  <div className="h-4 w-32 bg-surface-200 rounded mb-2" />
+                  <div className="h-3 w-full bg-surface-100 rounded" />
+                </div>
+              ))}
+            </div>
+          ) : upcomingTasks.length > 0 ? (
             <div className="space-y-3">
               {upcomingTasks.slice(0, 3).map(task => (
                 <TaskCard
                   key={task.id}
                   task={task}
                   onClick={() => router.push(`/app/tasks/${task.id}`)}
-                  onComplete={() => console.log('Complete task', task.id)}
+                  onComplete={() => handleCompleteTask(task)}
                 />
               ))}
             </div>
@@ -283,36 +274,51 @@ export default function MyShiftPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Users className="h-5 w-5 text-primary-600" />
-            My Residents
+            {assignedResidents.length > 0 ? 'My Residents' : 'Residents'}
           </CardTitle>
           <Link href="/app/residents" className="text-primary-600 text-sm font-medium">
             View all
           </Link>
         </CardHeader>
         <CardContent>
-          <div className="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-hide">
-            {DEMO_RESIDENTS.map(resident => (
-              <Link
-                key={resident.id}
-                href={`/app/residents/${resident.id}`}
-                className="flex-shrink-0 flex flex-col items-center gap-2 w-20"
-              >
-                <div className="relative">
-                  <Avatar
-                    src={resident.photo_url}
-                    name={`${resident.first_name} ${resident.last_name}`}
-                    size="lg"
-                  />
-                  {resident.hasAlert && (
-                    <div className="absolute -top-1 -right-1 h-4 w-4 bg-care-red rounded-full border-2 border-white" />
-                  )}
+          {residentsLoading ? (
+            <div className="flex gap-4 overflow-x-auto pb-2">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="flex-shrink-0 flex flex-col items-center gap-2 w-20">
+                  <div className="h-12 w-12 rounded-full bg-surface-200 animate-pulse" />
+                  <div className="h-3 w-16 bg-surface-100 rounded animate-pulse" />
                 </div>
-                <span className="text-sm text-center text-gray-700 truncate w-full">
-                  {resident.preferred_name || resident.first_name}
-                </span>
-              </Link>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : displayResidents.length > 0 ? (
+            <div className="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-hide">
+              {displayResidents.map(resident => (
+                <Link
+                  key={resident.id}
+                  href={`/app/residents/${resident.id}`}
+                  className="flex-shrink-0 flex flex-col items-center gap-2 w-20"
+                >
+                  <div className="relative">
+                    <Avatar
+                      src={resident.photo_url}
+                      name={`${resident.first_name} ${resident.last_name}`}
+                      size="lg"
+                    />
+                    {resident.statuses && resident.statuses.length > 0 && (
+                      <div className="absolute -top-1 -right-1 h-4 w-4 bg-care-red rounded-full border-2 border-white" />
+                    )}
+                  </div>
+                  <span className="text-sm text-center text-gray-700 truncate w-full">
+                    {resident.preferred_name || resident.first_name}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500 text-center py-4">
+              No residents yet
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -320,17 +326,17 @@ export default function MyShiftPage() {
       <div className="grid grid-cols-3 gap-3 mt-4">
         <StatCard
           icon={<CheckCircle className="h-5 w-5 text-care-green" />}
-          value="12"
+          value={logsLoading ? '-' : String(logs.length)}
           label="Logs today"
         />
         <StatCard
           icon={<Clock className="h-5 w-5 text-care-amber" />}
-          value={String(DEMO_TASKS.length)}
+          value={tasksLoading ? '-' : String(tasks.filter(t => t.status === 'pending').length)}
           label="Tasks left"
         />
         <StatCard
           icon={<Users className="h-5 w-5 text-primary-600" />}
-          value={String(DEMO_RESIDENTS.length)}
+          value={residentsLoading ? '-' : String(residents.length)}
           label="Residents"
         />
       </div>

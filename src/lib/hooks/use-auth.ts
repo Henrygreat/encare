@@ -7,47 +7,6 @@ import { createClient } from '@/lib/supabase/client'
 import { useAuthStore } from '@/lib/stores/auth-store'
 import type { User, Organisation } from '@/lib/database.types'
 
-function buildFallbackUser(sessionUser: {
-  id: string
-  email?: string
-  user_metadata?: Record<string, unknown>
-}): User {
-  const fullName =
-    typeof sessionUser.user_metadata?.full_name === 'string'
-      ? sessionUser.user_metadata.full_name
-      : typeof sessionUser.user_metadata?.name === 'string'
-        ? sessionUser.user_metadata.name
-        : (sessionUser.email?.split('@')[0] || 'Care Team User')
-
-  const now = new Date().toISOString()
-
-  return {
-    id: sessionUser.id,
-    organisation_id: 'demo-org',
-    email: sessionUser.email || '',
-    full_name: fullName,
-    role: 'manager',
-    avatar_url: null,
-    phone: null,
-    pin_hash: null,
-    is_active: true,
-    last_login_at: now,
-    preferences: {},
-    created_at: now,
-    updated_at: now,
-  }
-}
-
-const fallbackOrganisation: Organisation = {
-  id: 'demo-org',
-  name: 'EnCare Demo Organisation',
-  slug: 'encare-demo',
-  logo_url: null,
-  settings: {},
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-}
-
 export function useAuth() {
   const router = useRouter()
   const isInitializingRef = useRef(false)
@@ -86,10 +45,6 @@ export function useAuth() {
         return
       }
 
-      const fallbackUser = buildFallbackUser(session.user)
-      setUser(fallbackUser)
-      setOrganisation(fallbackOrganisation)
-
       const { data: userData, error: userError } = await supabase
         .from('users')
         .select('*')
@@ -97,11 +52,14 @@ export function useAuth() {
         .maybeSingle()
 
       if (userError) {
-        console.warn('User profile lookup failed, using fallback user:', userError.message)
+        console.error('User profile lookup failed:', userError.message)
+        clear()
         return
       }
 
       if (!userData) {
+        console.error('No user profile found for authenticated session')
+        clear()
         return
       }
 
@@ -114,13 +72,18 @@ export function useAuth() {
         .maybeSingle()
 
       if (orgError) {
-        console.warn('Organisation lookup failed, using fallback organisation:', orgError.message)
+        console.error('Organisation lookup failed:', orgError.message)
+        clear()
         return
       }
 
-      if (orgData) {
-        setOrganisation(orgData as Organisation)
+      if (!orgData) {
+        console.error('No organisation found for user')
+        clear()
+        return
       }
+
+      setOrganisation(orgData as Organisation)
     } catch (err) {
       console.error('Auth initialization error:', err)
       clear()

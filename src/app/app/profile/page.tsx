@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Settings,
@@ -11,6 +11,7 @@ import {
   HelpCircle,
   Moon,
   Lock,
+  AlertCircle,
 } from 'lucide-react'
 import { MobileHeader, PageContainer } from '@/components/layout/mobile-header'
 import { Card } from '@/components/ui/card'
@@ -19,12 +20,17 @@ import { Chip } from '@/components/ui/chip'
 import { Button } from '@/components/ui/button'
 import { SyncStatus } from '@/components/ui/sync-status'
 import { useAuth } from '@/lib/hooks/use-auth'
+import type { Json } from '@/lib/database.types'
 
 const ROLE_LABELS = {
   admin: 'Administrator',
   manager: 'Manager',
   senior_carer: 'Senior Carer',
   carer: 'Care Worker',
+}
+
+function asObject(value: Json | null | undefined): Record<string, any> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, any>) : {}
 }
 
 export default function ProfilePage() {
@@ -38,17 +44,28 @@ export default function ProfilePage() {
     setIsLoggingOut(false)
   }
 
+  const preferences = useMemo(() => asObject(user?.preferences), [user?.preferences])
+
   const displayUser = {
     full_name: user?.full_name || 'Care Team User',
-    email: user?.email || 'care-team@example.com',
+    email: user?.email || 'No email available',
     role: user?.role || 'manager',
     avatar_url: user?.avatar_url || null,
-    organisation_name: organisation?.name || 'EnCare Demo Organisation',
+    organisation_name: organisation?.name || null,
   }
+
+  const menuItems = [
+    { href: '/app/profile/notifications', icon: <Bell className="h-5 w-5" />, label: 'Notifications', sublabel: preferences.notifications?.criticalIncidents ? 'Critical alerts enabled' : 'Review alert channels' },
+    { href: '/app/profile/pin', icon: <Lock className="h-5 w-5" />, label: 'PIN Lock', sublabel: preferences.pin?.quickUnlockEnabled ? 'Quick unlock enabled' : 'Set up quick unlock' },
+    { href: '/app/profile/appearance', icon: <Moon className="h-5 w-5" />, label: 'Appearance', sublabel: `${preferences.appearance?.theme || 'System'} theme` },
+    { href: '/app/profile/privacy', icon: <Shield className="h-5 w-5" />, label: 'Privacy & Security', sublabel: `${preferences.privacy?.autoLockMinutes || 15} minute auto-lock` },
+    { href: '/app/profile/help', icon: <HelpCircle className="h-5 w-5" />, label: 'Help & Support', sublabel: `${preferences.support?.preferredChannel || 'email'} support` },
+    { href: '/app/profile/settings', icon: <Settings className="h-5 w-5" />, label: 'App Settings', sublabel: 'Organisation workflow defaults' },
+  ]
 
   return (
     <PageContainer header={<MobileHeader title="Profile" />}>
-      <Card className="mb-4" padding="lg">
+      <Card className="mb-4 bg-gradient-to-br from-white via-white to-sky-50" padding="lg">
         <div className="flex items-center gap-4">
           <Avatar src={displayUser.avatar_url} name={displayUser.full_name} size="xl" />
           <div className="flex-1">
@@ -63,7 +80,14 @@ export default function ProfilePage() {
         </div>
         <div className="mt-4 border-t border-surface-100 pt-4">
           <p className="text-sm text-gray-500">Organisation</p>
-          <p className="font-medium text-gray-900">{displayUser.organisation_name}</p>
+          {displayUser.organisation_name ? (
+            <p className="font-medium text-gray-900">{displayUser.organisation_name}</p>
+          ) : (
+            <div className="mt-2 flex items-center gap-2 rounded-2xl border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              <AlertCircle className="h-4 w-4" />
+              Organisation details are unavailable. Reload after your workspace finishes syncing.
+            </div>
+          )}
         </div>
       </Card>
 
@@ -78,15 +102,15 @@ export default function ProfilePage() {
       </Card>
 
       <Card className="mb-4" padding="none">
-        <MenuItem icon={<Bell className="h-5 w-5" />} label="Notifications" onClick={() => router.push('/app/profile/notifications')} />
-        <MenuItem icon={<Lock className="h-5 w-5" />} label="PIN Lock" sublabel="Quick unlock enabled" onClick={() => router.push('/app/profile/pin')} />
-        <MenuItem icon={<Moon className="h-5 w-5" />} label="Appearance" sublabel="System default" onClick={() => router.push('/app/profile/appearance')} />
-        <MenuItem icon={<Shield className="h-5 w-5" />} label="Privacy & Security" onClick={() => router.push('/app/profile/privacy')} isLast />
+        {menuItems.slice(0, 4).map((item, index) => (
+          <MenuItem key={item.href} icon={item.icon} label={item.label} sublabel={item.sublabel} onClick={() => router.push(item.href)} isLast={index === 3} />
+        ))}
       </Card>
 
       <Card className="mb-4" padding="none">
-        <MenuItem icon={<HelpCircle className="h-5 w-5" />} label="Help & Support" onClick={() => router.push('/app/profile/help')} />
-        <MenuItem icon={<Settings className="h-5 w-5" />} label="App Settings" onClick={() => router.push('/app/profile/settings')} isLast />
+        {menuItems.slice(4).map((item, index) => (
+          <MenuItem key={item.href} icon={item.icon} label={item.label} sublabel={item.sublabel} onClick={() => router.push(item.href)} isLast={index === menuItems.slice(4).length - 1} />
+        ))}
       </Card>
 
       <Button variant="danger" fullWidth size="tap" onClick={handleLogout} isLoading={isLoggingOut}>
@@ -115,7 +139,7 @@ function MenuItem({
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center justify-between p-4 hover:bg-surface-50 transition-colors ${!isLast ? 'border-b border-surface-100' : ''}`}
+      className={`flex w-full items-center justify-between p-4 transition-colors hover:bg-surface-50 ${!isLast ? 'border-b border-surface-100' : ''}`}
     >
       <div className="flex items-center gap-3">
         <div className="text-gray-500">{icon}</div>

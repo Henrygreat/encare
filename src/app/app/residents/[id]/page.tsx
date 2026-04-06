@@ -9,111 +9,96 @@ import {
   BookOpen,
   AlertTriangle,
   Utensils,
-  Coffee,
-  Pill
+  User,
 } from 'lucide-react'
 import { MobileHeader, PageContainer } from '@/components/layout/mobile-header'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
 import { Avatar } from '@/components/ui/avatar'
 import { Chip } from '@/components/ui/chip'
 import { Timeline } from '@/components/ui/timeline'
 import { QuickActionGrid } from '@/components/ui/quick-action-tile'
-import type { Resident, TimelineEvent, LogType } from '@/lib/database.types'
-
-// Demo data
-const DEMO_RESIDENT: Resident = {
-  id: '1',
-  organisation_id: 'org1',
-  first_name: 'Margaret',
-  last_name: 'Thompson',
-  preferred_name: 'Maggie',
-  room_number: '101',
-  photo_url: null,
-  date_of_birth: '1940-03-15',
-  admission_date: '2023-01-10',
-  status: 'active',
-  emergency_contact: { name: 'John Thompson', phone: '07700 900123', relationship: 'Son' },
-  medical_info: { conditions: ['Diabetes Type 2', 'Arthritis'] },
-  dietary_requirements: 'Soft foods, diabetic diet',
-  mobility_notes: 'Wheelchair user, requires 2 staff for transfers',
-  communication_needs: null,
-  risk_flags: [
-    { type: 'falls', level: 'high', notes: 'History of falls' },
-    { type: 'choking', level: 'medium', notes: 'Requires soft foods' }
-  ],
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-}
-
-const DEMO_TIMELINE: Array<TimelineEvent & { user_name?: string }> = [
-  {
-    id: 'e1',
-    resident_id: '1',
-    event_type: 'log',
-    sub_type: 'medication',
-    data: { value: 'Given', medication: 'Metformin 500mg' },
-    notes: null,
-    user_id: 'u1',
-    occurred_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    user_name: 'Sarah J.',
-  },
-  {
-    id: 'e2',
-    resident_id: '1',
-    event_type: 'log',
-    sub_type: 'meal',
-    data: { value: 'Half', meal_type: 'Breakfast' },
-    notes: 'Ate porridge but refused toast',
-    user_id: 'u1',
-    occurred_at: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-    created_at: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-    user_name: 'Sarah J.',
-  },
-  {
-    id: 'e3',
-    resident_id: '1',
-    event_type: 'log',
-    sub_type: 'mood',
-    data: { value: 'Calm' },
-    notes: 'Settled well after breakfast',
-    user_id: 'u2',
-    occurred_at: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-    created_at: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-    user_name: 'Mike T.',
-  },
-  {
-    id: 'e4',
-    resident_id: '1',
-    event_type: 'log',
-    sub_type: 'personal_care',
-    data: { value: 'Wash' },
-    notes: 'Morning wash completed with assistance',
-    user_id: 'u2',
-    occurred_at: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
-    created_at: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
-    user_name: 'Mike T.',
-  },
-]
+import { useResident } from '@/lib/hooks/use-residents'
+import { useResidentTimeline } from '@/lib/hooks/use-logs'
+import type { LogType } from '@/lib/database.types'
 
 export default function ResidentPage({ params }: { params: { id: string } }) {
   const router = useRouter()
+  const { resident, isLoading, error } = useResident(params.id)
+  const { events, isLoading: timelineLoading } = useResidentTimeline(params.id, 10)
   const [showQuickLog, setShowQuickLog] = useState(false)
-  const resident = DEMO_RESIDENT
 
   const handleQuickLogSelect = (logType: LogType) => {
     router.push(`/app/residents/${params.id}/log/${logType}`)
   }
 
-  const riskFlags = resident.risk_flags as Array<{ type: string; level: string; notes: string }> || []
+  // Loading state
+  if (isLoading) {
+    return (
+      <PageContainer
+        header={
+          <MobileHeader
+            title="Loading..."
+            showBack
+            backHref="/app/residents"
+          />
+        }
+      >
+        <div className="animate-pulse space-y-4 p-4">
+          <div className="flex items-center gap-4">
+            <div className="h-16 w-16 rounded-full bg-surface-200" />
+            <div className="flex-1">
+              <div className="h-5 w-40 bg-surface-200 rounded mb-2" />
+              <div className="h-4 w-24 bg-surface-100 rounded" />
+            </div>
+          </div>
+          <div className="h-32 bg-surface-100 rounded-2xl" />
+          <div className="h-48 bg-surface-100 rounded-2xl" />
+        </div>
+      </PageContainer>
+    )
+  }
+
+  // Error or not found state
+  if (error || !resident) {
+    return (
+      <PageContainer
+        header={
+          <MobileHeader
+            title="Resident"
+            showBack
+            backHref="/app/residents"
+          />
+        }
+      >
+        <div className="text-center py-12">
+          <div className="h-16 w-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
+            <AlertTriangle className="h-8 w-8 text-red-500" />
+          </div>
+          <p className="text-gray-700 font-medium">
+            {error ? 'Unable to load resident' : 'Resident not found'}
+          </p>
+          <p className="text-sm text-gray-500 mt-1">
+            {error ? 'Please try again later' : 'This resident may have been removed'}
+          </p>
+          <button
+            onClick={() => router.push('/app/residents')}
+            className="mt-4 text-primary-600 font-medium"
+          >
+            Back to residents
+          </button>
+        </div>
+      </PageContainer>
+    )
+  }
+
+  const riskFlags = (resident.risk_flags as Array<{ type: string; level: string; notes: string }>) || []
 
   return (
     <PageContainer
       header={
         <MobileHeader
           title={`${resident.preferred_name || resident.first_name} ${resident.last_name}`}
-          subtitle={`Room ${resident.room_number}`}
+          subtitle={resident.room_number ? `Room ${resident.room_number}` : undefined}
           showBack
           backHref="/app/residents"
         />
@@ -132,7 +117,9 @@ export default function ResidentPage({ params }: { params: { id: string } }) {
             <h1 className="text-xl font-bold text-gray-900">
               {resident.preferred_name || resident.first_name} {resident.last_name}
             </h1>
-            <p className="text-gray-500">Room {resident.room_number}</p>
+            {resident.room_number && (
+              <p className="text-gray-500">Room {resident.room_number}</p>
+            )}
             {riskFlags.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mt-2">
                 {riskFlags.map((risk, i) => (
@@ -226,7 +213,25 @@ export default function ResidentPage({ params }: { params: { id: string } }) {
             </Link>
           </CardHeader>
           <CardContent>
-            <Timeline events={DEMO_TIMELINE} />
+            {timelineLoading ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="animate-pulse flex gap-3">
+                    <div className="h-8 w-8 rounded-full bg-surface-200" />
+                    <div className="flex-1">
+                      <div className="h-3 w-24 bg-surface-200 rounded mb-2" />
+                      <div className="h-3 w-full bg-surface-100 rounded" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : events.length === 0 ? (
+              <div className="text-center py-6 text-gray-500">
+                <p className="text-sm">No activity recorded yet</p>
+              </div>
+            ) : (
+              <Timeline events={events} />
+            )}
           </CardContent>
         </Card>
       </div>

@@ -1,16 +1,20 @@
-import { PlaceholderPage } from '@/components/layout/placeholder-page'
-
+'use client'
+import { useEffect, useState } from 'react'
+import { AlertTriangle, CheckCircle2, ChevronLeft, FileText, Users } from 'lucide-react'
+import Link from 'next/link'
+import { MobileHeader, PageContainer } from '@/components/layout/mobile-header'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Chip } from '@/components/ui/chip'
+import { createClient } from '@/lib/supabase/client'
+import { formatDate } from '@/lib/utils'
 export default function HandoverDetailPage({ params }: { params: { id: string } }) {
-  return (
-    <PlaceholderPage
-      title={`Handover ${params.id}`}
-      description="The handover route now resolves correctly and can be expanded into a full editable handover note page."
-      backHref="/app/handover"
-      bullets={[
-        'Shift summary grouped by priority.',
-        'Read receipts and acknowledgement status.',
-        'Editable notes for senior carers or managers.',
-      ]}
-    />
-  )
+  const [handover, setHandover] = useState<any>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => { async function loadHandover() { setIsLoading(true); setError(null); try { const supabase = createClient(); const { data, error } = await supabase.from('handover_notes').select('*, users!created_by (full_name)').eq('id', params.id).single(); if (error) throw error; setHandover(data) } catch (err) { setError(err instanceof Error ? err.message : 'Unable to load handover note') } finally { setIsLoading(false) } } void loadHandover() }, [params.id])
+  const autoSummary = handover?.auto_summary as Record<string, any> | undefined
+  const priorityItems = Array.isArray(handover?.priority_items) ? handover.priority_items : []
+  const readBy = Array.isArray(handover?.read_by) ? handover.read_by : []
+  return <PageContainer header={<MobileHeader title="Handover detail" backHref="/app/handover" />}>{isLoading ? <Card padding="lg"><p className="text-center text-slate-500">Loading handover…</p></Card> : error ? <Card padding="lg"><p className="text-center text-care-red">{error}</p></Card> : !handover ? <Card padding="lg"><p className="text-center text-slate-500">Handover note not found.</p></Card> : <div className="space-y-4"><Card className="border-white/70 bg-gradient-to-br from-slate-900 via-slate-800 to-primary-700 text-white shadow-xl" padding="lg"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary-100">Shift handover</p><h1 className="mt-2 text-2xl font-semibold">{handover.shift_type || 'Shift'} · {formatDate(handover.shift_date)}</h1><p className="mt-2 text-sm text-slate-200">Created by {Array.isArray(handover.users) ? handover.users[0]?.full_name : handover.users?.full_name || 'Unknown'}</p></div><Chip variant={handover.finalized_at ? 'success' : 'warning'} size="sm">{handover.finalized_at ? 'Finalized' : 'Draft'}</Chip></div></Card><div className="grid grid-cols-2 gap-3"><MiniCard icon={<FileText className="h-4 w-4 text-primary-600" />} label="Logs" value={autoSummary?.total_logs || 0} /><MiniCard icon={<Users className="h-4 w-4 text-primary-600" />} label="Residents" value={autoSummary?.residents_logged || 0} /><MiniCard icon={<CheckCircle2 className="h-4 w-4 text-emerald-600" />} label="Tasks done" value={autoSummary?.tasks_completed || 0} /><MiniCard icon={<AlertTriangle className="h-4 w-4 text-amber-600" />} label="Incidents" value={autoSummary?.incidents || 0} /></div><Card padding="md"><CardHeader><CardTitle>Priority items</CardTitle></CardHeader><CardContent>{priorityItems.length === 0 ? <p className="text-sm text-slate-500">No priority items were captured for this handover.</p> : <div className="space-y-3">{priorityItems.map((item: any, index: number) => <div key={index} className="rounded-2xl border border-amber-100 bg-amber-50 p-3 text-sm text-slate-700">{item?.text || item?.title || 'Priority item'}</div>)}</div>}</CardContent></Card><Card padding="md"><CardHeader><CardTitle>Manual notes</CardTitle></CardHeader><CardContent><p className="whitespace-pre-wrap text-sm text-slate-700">{handover.manual_notes || 'No manual notes were added.'}</p></CardContent></Card><Card padding="md"><CardHeader><CardTitle>Read receipts</CardTitle></CardHeader><CardContent><p className="text-sm text-slate-600">{readBy.length} team member{readBy.length === 1 ? '' : 's'} have acknowledged this handover.</p></CardContent></Card><Link href="/app/handover" className="flex items-center justify-center gap-2 rounded-button bg-white py-3 text-sm font-medium text-primary-600 shadow-sm"><ChevronLeft className="h-4 w-4" />Back to handover list</Link></div>}</PageContainer>
 }
+function MiniCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) { return <Card className="border-white/70 bg-white/85 shadow-sm" padding="md"><div className="flex items-center justify-between gap-3"><div><p className="text-sm text-slate-500">{label}</p><p className="mt-2 text-2xl font-semibold text-slate-900">{value}</p></div><div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-50">{icon}</div></div></Card> }

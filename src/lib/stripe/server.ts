@@ -2,6 +2,28 @@ import Stripe from 'stripe'
 import { getStripeInstance, getTrialDays, isTrialEnabled } from './config'
 import { createClient } from '@supabase/supabase-js'
 
+type BillingLogLevel = 'info' | 'warn' | 'error'
+
+function logBillingEvent(level: BillingLogLevel, event: string, context: Record<string, unknown>) {
+  const payload = {
+    scope: 'billing',
+    event,
+    ...context,
+  }
+
+  if (level === 'error') {
+    console.error(payload)
+    return
+  }
+
+  if (level === 'warn') {
+    console.warn(payload)
+    return
+  }
+
+  console.info(payload)
+}
+
 const getServiceRoleClient = () => {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -51,7 +73,11 @@ export async function getOrCreateStripeCustomer(
   })
 
   if (error) {
-    console.error('Error saving billing customer:', error)
+    logBillingEvent('error', 'billing_customer_persist_failed', {
+      organisationId,
+      customerId: customer.id,
+      message: error.message,
+    })
     throw error
   }
 
@@ -124,7 +150,10 @@ export async function getSubscriptionByOrganisationId(organisationId: string) {
     .single()
 
   if (error && error.code !== 'PGRST116') {
-    console.error('Error fetching subscription:', error)
+    logBillingEvent('error', 'subscription_fetch_failed', {
+      organisationId,
+      message: error.message,
+    })
     throw error
   }
 
@@ -140,7 +169,9 @@ export async function upsertSubscription(
   const orgId = organisationId || subscription.metadata.organisation_id
 
   if (!orgId) {
-    console.error('No organisation_id found for subscription:', subscription.id)
+    logBillingEvent('warn', 'subscription_missing_organisation', {
+      subscriptionId: subscription.id,
+    })
     return
   }
 
@@ -176,7 +207,11 @@ export async function upsertSubscription(
     })
 
   if (error) {
-    console.error('Error upserting subscription:', error)
+    logBillingEvent('error', 'subscription_upsert_failed', {
+      organisationId: orgId,
+      subscriptionId: subscription.id,
+      message: error.message,
+    })
     throw error
   }
 }
@@ -207,7 +242,10 @@ export async function getCustomerIdByOrganisationId(organisationId: string): Pro
     .single()
 
   if (error && error.code !== 'PGRST116') {
-    console.error('Error fetching billing customer:', error)
+    logBillingEvent('error', 'billing_customer_fetch_failed', {
+      organisationId,
+      message: error.message,
+    })
     throw error
   }
 
@@ -246,17 +284,25 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
 
     case 'invoice.paid': {
       const invoice = event.data.object as Stripe.Invoice
-      console.log(`Invoice paid: ${invoice.id} for customer: ${invoice.customer}`)
+      logBillingEvent('info', 'invoice_paid', {
+        invoiceId: invoice.id,
+        customerId: invoice.customer,
+      })
       break
     }
 
     case 'invoice.payment_failed': {
       const invoice = event.data.object as Stripe.Invoice
-      console.error(`Invoice payment failed: ${invoice.id} for customer: ${invoice.customer}`)
+      logBillingEvent('warn', 'invoice_payment_failed', {
+        invoiceId: invoice.id,
+        customerId: invoice.customer,
+      })
       break
     }
 
     default:
-      console.log(`Unhandled webhook event type: ${event.type}`)
+      logBillingEvent('info', 'webhook_unhandled', {
+        type: event.type,
+      })
   }
 }

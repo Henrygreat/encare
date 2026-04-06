@@ -2,160 +2,27 @@
 
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, Filter } from 'lucide-react'
+import { Search, Users, AlertTriangle } from 'lucide-react'
 import { MobileHeader, PageContainer } from '@/components/layout/mobile-header'
 import { Input } from '@/components/ui/input'
-import { ResidentCard, ResidentList } from '@/components/ui/resident-card'
-import { Chip } from '@/components/ui/chip'
-import type { Resident } from '@/lib/database.types'
-
-// Demo data
-const DEMO_RESIDENTS: Array<Resident & { statuses?: Array<{ type: 'med_due' | 'incident' | 'no_meal' | 'overdue_task' | 'alert'; label: string }>; isAssigned?: boolean }> = [
-  {
-    id: '1',
-    organisation_id: 'org1',
-    first_name: 'Margaret',
-    last_name: 'Thompson',
-    preferred_name: 'Maggie',
-    room_number: '101',
-    photo_url: null,
-    date_of_birth: '1940-03-15',
-    admission_date: '2023-01-10',
-    status: 'active',
-    emergency_contact: {},
-    medical_info: {},
-    dietary_requirements: 'Soft foods',
-    mobility_notes: 'Wheelchair user',
-    communication_needs: null,
-    risk_flags: [],
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    isAssigned: true,
-    statuses: [{ type: 'med_due', label: 'Med due' }],
-  },
-  {
-    id: '2',
-    organisation_id: 'org1',
-    first_name: 'Robert',
-    last_name: 'Wilson',
-    preferred_name: 'Bob',
-    room_number: '105',
-    photo_url: null,
-    date_of_birth: '1938-07-22',
-    admission_date: '2022-08-15',
-    status: 'active',
-    emergency_contact: {},
-    medical_info: {},
-    dietary_requirements: null,
-    mobility_notes: 'Walking frame',
-    communication_needs: 'Hard of hearing',
-    risk_flags: [],
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    isAssigned: true,
-  },
-  {
-    id: '3',
-    organisation_id: 'org1',
-    first_name: 'Dorothy',
-    last_name: 'Brown',
-    preferred_name: null,
-    room_number: '108',
-    photo_url: null,
-    date_of_birth: '1945-11-08',
-    admission_date: '2023-06-20',
-    status: 'active',
-    emergency_contact: {},
-    medical_info: {},
-    dietary_requirements: 'Diabetic diet',
-    mobility_notes: null,
-    communication_needs: null,
-    risk_flags: [],
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    isAssigned: true,
-    statuses: [{ type: 'no_meal', label: 'No meal' }],
-  },
-  {
-    id: '4',
-    organisation_id: 'org1',
-    first_name: 'James',
-    last_name: 'Anderson',
-    preferred_name: 'Jim',
-    room_number: '112',
-    photo_url: null,
-    date_of_birth: '1942-04-18',
-    admission_date: '2023-03-05',
-    status: 'active',
-    emergency_contact: {},
-    medical_info: {},
-    dietary_requirements: null,
-    mobility_notes: 'Independent',
-    communication_needs: null,
-    risk_flags: [],
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    isAssigned: false,
-  },
-  {
-    id: '5',
-    organisation_id: 'org1',
-    first_name: 'Elizabeth',
-    last_name: 'Davis',
-    preferred_name: 'Betty',
-    room_number: '115',
-    photo_url: null,
-    date_of_birth: '1935-09-30',
-    admission_date: '2021-12-01',
-    status: 'active',
-    emergency_contact: {},
-    medical_info: {},
-    dietary_requirements: 'Pureed',
-    mobility_notes: 'Hoisted transfer',
-    communication_needs: 'Non-verbal',
-    risk_flags: [],
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    isAssigned: false,
-    statuses: [{ type: 'incident', label: 'Incident' }],
-  },
-  {
-    id: '6',
-    organisation_id: 'org1',
-    first_name: 'William',
-    last_name: 'Taylor',
-    preferred_name: 'Bill',
-    room_number: '118',
-    photo_url: null,
-    date_of_birth: '1939-01-12',
-    admission_date: '2023-08-22',
-    status: 'active',
-    emergency_contact: {},
-    medical_info: {},
-    dietary_requirements: null,
-    mobility_notes: null,
-    communication_needs: null,
-    risk_flags: [],
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    isAssigned: false,
-  },
-]
+import { ResidentList } from '@/components/ui/resident-card'
+import { useResidents, type ResidentWithStatus } from '@/lib/hooks/use-residents'
 
 type FilterType = 'all' | 'assigned' | 'alerts'
 
 export default function ResidentsPage() {
   const router = useRouter()
+  const { residents, isLoading, error, refetch } = useResidents()
   const [searchQuery, setSearchQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState<FilterType>('all')
 
   const filteredResidents = useMemo(() => {
-    let residents = [...DEMO_RESIDENTS]
+    let filtered = [...residents]
 
     // Apply search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase()
-      residents = residents.filter(
+      filtered = filtered.filter(
         r =>
           r.first_name.toLowerCase().includes(query) ||
           r.last_name.toLowerCase().includes(query) ||
@@ -166,23 +33,23 @@ export default function ResidentsPage() {
 
     // Apply category filter
     if (activeFilter === 'assigned') {
-      residents = residents.filter(r => r.isAssigned)
+      filtered = filtered.filter(r => r.isAssigned)
     } else if (activeFilter === 'alerts') {
-      residents = residents.filter(r => r.statuses && r.statuses.length > 0)
+      filtered = filtered.filter(r => r.statuses && r.statuses.length > 0)
     }
 
     // Sort: assigned first, then by name
-    residents.sort((a, b) => {
+    filtered.sort((a, b) => {
       if (a.isAssigned && !b.isAssigned) return -1
       if (!a.isAssigned && b.isAssigned) return 1
       return a.first_name.localeCompare(b.first_name)
     })
 
-    return residents
-  }, [searchQuery, activeFilter])
+    return filtered
+  }, [residents, searchQuery, activeFilter])
 
-  const assignedCount = DEMO_RESIDENTS.filter(r => r.isAssigned).length
-  const alertsCount = DEMO_RESIDENTS.filter(r => r.statuses && r.statuses.length > 0).length
+  const assignedCount = residents.filter(r => r.isAssigned).length
+  const alertsCount = residents.filter(r => r.statuses && r.statuses.length > 0).length
 
   return (
     <PageContainer
@@ -203,7 +70,7 @@ export default function ResidentsPage() {
         <FilterChip
           active={activeFilter === 'all'}
           onClick={() => setActiveFilter('all')}
-          count={DEMO_RESIDENTS.length}
+          count={residents.length}
         >
           All
         </FilterChip>
@@ -224,12 +91,49 @@ export default function ResidentsPage() {
         </FilterChip>
       </div>
 
-      {/* Residents list */}
-      <ResidentList
-        residents={filteredResidents}
-        onResidentClick={(resident) => router.push(`/app/residents/${resident.id}`)}
-        emptyMessage={searchQuery ? 'No residents match your search' : 'No residents'}
-      />
+      {/* Error state */}
+      {error && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Unable to load residents. <button onClick={refetch} className="underline">Try again</button>
+        </div>
+      )}
+
+      {/* Loading state */}
+      {isLoading ? (
+        <div className="space-y-3">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="animate-pulse rounded-2xl border border-surface-200 bg-white p-4">
+              <div className="flex items-center gap-3">
+                <div className="h-12 w-12 rounded-full bg-surface-200" />
+                <div className="flex-1">
+                  <div className="h-4 w-32 bg-surface-200 rounded mb-2" />
+                  <div className="h-3 w-20 bg-surface-100 rounded" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : filteredResidents.length === 0 ? (
+        <div className="text-center py-12">
+          <div className="h-16 w-16 mx-auto mb-4 rounded-full bg-surface-100 flex items-center justify-center">
+            <Users className="h-8 w-8 text-gray-400" />
+          </div>
+          <p className="text-gray-500 font-medium">
+            {searchQuery ? 'No residents match your search' : 'No residents yet'}
+          </p>
+          {!searchQuery && (
+            <p className="text-sm text-gray-400 mt-1">
+              Residents will appear here once added
+            </p>
+          )}
+        </div>
+      ) : (
+        <ResidentList
+          residents={filteredResidents}
+          onResidentClick={(resident) => router.push(`/app/residents/${resident.id}`)}
+          emptyMessage={searchQuery ? 'No residents match your search' : 'No residents'}
+        />
+      )}
     </PageContainer>
   )
 }

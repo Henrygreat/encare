@@ -6,9 +6,8 @@ import { Camera, Check, X } from 'lucide-react'
 import { MobileHeader, PageContainer } from '@/components/layout/mobile-header'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { LOG_TYPE_CONFIG, type LogTypeKey, generateOfflineId } from '@/lib/utils'
-import { useOfflineStore } from '@/lib/stores/offline-store'
+import { LOG_TYPE_CONFIG, type LogTypeKey } from '@/lib/utils'
+import { useCreateLog } from '@/lib/hooks/use-logs'
 import type { LogType } from '@/lib/database.types'
 
 // Preset configurations for each log type
@@ -72,56 +71,37 @@ export default function LogPage({
   params: { id: string; logType: string }
 }) {
   const router = useRouter()
-  const { addToQueue, isOnline } = useOfflineStore()
+  const { createLog, isLoading: isSaving } = useCreateLog()
   const logType = params.logType as LogType
   const config = LOG_TYPE_CONFIG[logType as LogTypeKey]
   const presets = PRESETS[logType]
 
   const [selectedValue, setSelectedValue] = useState<string | null>(null)
   const [notes, setNotes] = useState('')
-  const [isSubmitting, setIsSubmitting] = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleSubmit = async () => {
     if (!selectedValue && !notes) return
 
-    setIsSubmitting(true)
+    setError(null)
 
-    const logData = {
-      id: generateOfflineId(),
-      organisation_id: 'org1', // Would come from auth context
-      resident_id: params.id,
-      logged_by: 'user1', // Would come from auth context
-      log_type: logType,
-      log_data: { value: selectedValue },
-      notes: notes || null,
-      logged_at: new Date().toISOString(),
-      sync_status: isOnline ? 'synced' as const : 'pending' as const,
-      offline_id: generateOfflineId(),
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
+    const result = await createLog({
+      residentId: params.id,
+      logType: logType,
+      logData: { value: selectedValue },
+      notes: notes || undefined,
+    })
 
-    if (!isOnline) {
-      // Queue for offline sync
-      addToQueue({
-        ...logData,
-        queued_at: Date.now(),
-      } as any)
+    if (result.success) {
+      setShowSuccess(true)
+      // Auto-navigate back after showing success
+      setTimeout(() => {
+        router.push(`/app/residents/${params.id}`)
+      }, 800)
     } else {
-      // In production, would call Supabase here
-      // await supabase.from('daily_logs').insert(logData)
+      setError(result.error || 'Failed to save log')
     }
-
-    // Simulate success
-    await new Promise(resolve => setTimeout(resolve, 300))
-    setIsSubmitting(false)
-    setShowSuccess(true)
-
-    // Auto-navigate back after showing success
-    setTimeout(() => {
-      router.push(`/app/residents/${params.id}`)
-    }, 800)
   }
 
   const handleCancel = () => {
@@ -143,9 +123,6 @@ export default function LogPage({
             <Check className="h-10 w-10 text-white" />
           </div>
           <h2 className="text-xl font-semibold text-gray-900">Logged!</h2>
-          <p className="text-gray-500 mt-1">
-            {!isOnline && 'Will sync when online'}
-          </p>
         </div>
         <style jsx>{`
           @keyframes scale-in {
@@ -180,6 +157,13 @@ export default function LogPage({
       noPadding
     >
       <div className="p-4">
+        {/* Error message */}
+        {error && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
         {/* Preset Options */}
         {presets && (
           <div className="grid grid-cols-2 gap-3 mb-6">
@@ -234,19 +218,12 @@ export default function LogPage({
           fullWidth
           size="tap"
           onClick={handleSubmit}
-          isLoading={isSubmitting}
+          isLoading={isSaving}
           disabled={!selectedValue && !notes}
         >
           <Check className="h-5 w-5 mr-2" />
           Save Log
         </Button>
-
-        {/* Offline indicator */}
-        {!isOnline && (
-          <p className="text-center text-sm text-amber-600 mt-3">
-            You&apos;re offline. This will sync when you&apos;re back online.
-          </p>
-        )}
       </div>
     </PageContainer>
   )

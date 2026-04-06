@@ -20,6 +20,16 @@ const navItems = [
   { href: '/dashboard/settings', icon: Settings, label: 'Settings' },
 ]
 
+function getInitials(name: string | null | undefined) {
+  if (!name) return 'EC'
+  return name
+    .split(' ')
+    .map((part) => part.charAt(0))
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+}
+
 export default async function DashboardLayout({
   children,
 }: {
@@ -32,28 +42,45 @@ export default async function DashboardLayout({
     redirect('/login')
   }
 
-  // In production, would check if user has manager role
-  // const { data: userData } = await supabase.from('users').select('role').eq('id', user.id).single()
-  // if (!userData || !['admin', 'manager'].includes(userData.role)) {
-  //   redirect('/app')
-  // }
+  const { data: profile } = await supabase
+    .from('users')
+    .select('full_name, email, organisation_id')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  const { data: organisation } = profile?.organisation_id
+    ? await supabase
+        .from('organisations')
+        .select('name, settings')
+        .eq('id', profile.organisation_id)
+        .maybeSingle()
+    : { data: null }
+
+  const workspaceLabel = typeof organisation?.settings === 'object' && organisation?.settings && !Array.isArray(organisation.settings)
+    ? ((organisation.settings as Record<string, any>).branding?.workspaceLabel as string | undefined)
+    : undefined
+
+  const displayName = profile?.full_name || 'EnCare Manager'
+  const displayEmail = profile?.email || user.email || 'No email available'
+  const organisationName = workspaceLabel || organisation?.name || 'EnCare Workspace'
+  const initials = getInitials(displayName)
 
   return (
-    <div className="min-h-screen bg-surface-50 flex">
-      {/* Sidebar */}
-      <aside className="hidden md:flex md:flex-col md:w-64 bg-white border-r border-surface-200">
-        {/* Logo */}
-        <div className="h-16 flex items-center px-6 border-b border-surface-200">
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="h-9 w-9 bg-primary-600 rounded-xl flex items-center justify-center">
-              <span className="text-white font-bold text-lg">E</span>
+    <div className="flex min-h-screen bg-surface-50">
+      <aside className="hidden border-r border-surface-200 bg-white md:flex md:w-64 md:flex-col">
+        <div className="flex h-16 items-center border-b border-surface-200 px-6">
+          <Link href="/dashboard" className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-600">
+              <span className="text-lg font-bold text-white">E</span>
             </div>
-            <span className="text-xl font-bold text-gray-900">EnCare</span>
+            <div>
+              <span className="block text-xl font-bold text-gray-900">EnCare</span>
+              <span className="block text-xs text-slate-500">{organisationName}</span>
+            </div>
           </Link>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 space-y-1 p-4">
           {navItems.map((item) => (
             <NavLink key={item.href} href={item.href} icon={item.icon}>
               {item.label}
@@ -61,25 +88,20 @@ export default async function DashboardLayout({
           ))}
         </nav>
 
-        {/* User Menu */}
-        <div className="p-4 border-t border-surface-200">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="h-10 w-10 rounded-full bg-primary-100 flex items-center justify-center">
-              <span className="text-primary-700 font-semibold">MJ</span>
+        <div className="border-t border-surface-200 p-4">
+          <div className="mb-3 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100">
+              <span className="font-semibold text-primary-700">{initials}</span>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 truncate">
-                Manager Demo
-              </p>
-              <p className="text-xs text-gray-500 truncate">
-                manager@carehome.com
-              </p>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-gray-900">{displayName}</p>
+              <p className="truncate text-xs text-gray-500">{displayEmail}</p>
             </div>
           </div>
           <form action="/api/auth/signout" method="post">
             <button
               type="submit"
-              className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-surface-50 rounded-button transition-colors"
+              className="flex w-full items-center gap-2 rounded-button px-3 py-2 text-sm text-gray-600 transition-colors hover:bg-surface-50 hover:text-gray-900"
             >
               <LogOut className="h-4 w-4" />
               Sign out
@@ -88,14 +110,12 @@ export default async function DashboardLayout({
         </div>
       </aside>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col min-h-screen">
-        {/* Top Bar */}
-        <header className="h-16 bg-white border-b border-surface-200 flex items-center justify-between px-6">
+      <div className="flex min-h-screen flex-1 flex-col">
+        <header className="flex h-16 items-center justify-between border-b border-surface-200 bg-white px-6">
           <div className="flex items-center gap-4 md:hidden">
             <Link href="/dashboard" className="flex items-center gap-2">
-              <div className="h-8 w-8 bg-primary-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold">E</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600">
+                <span className="font-bold text-white">E</span>
               </div>
             </Link>
           </div>
@@ -103,33 +123,29 @@ export default async function DashboardLayout({
           <div className="flex-1" />
 
           <div className="flex items-center gap-3">
-            <button className="relative p-2 text-gray-500 hover:text-gray-700 hover:bg-surface-50 rounded-full transition-colors">
+            <button className="relative rounded-full p-2 text-gray-500 transition-colors hover:bg-surface-50 hover:text-gray-700">
               <Bell className="h-5 w-5" />
-              <span className="absolute top-1 right-1 h-2 w-2 bg-care-red rounded-full" />
+              <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-care-red" />
             </button>
-            <div className="hidden md:block h-10 w-10 rounded-full bg-primary-100 flex items-center justify-center">
-              <span className="text-primary-700 font-semibold">MJ</span>
+            <div className="hidden h-10 w-10 items-center justify-center rounded-full bg-primary-100 md:flex">
+              <span className="font-semibold text-primary-700">{initials}</span>
             </div>
           </div>
         </header>
 
-        {/* Page Content */}
-        <main className="flex-1 p-6 overflow-auto">
-          {children}
-        </main>
+        <main className="flex-1 overflow-auto p-6">{children}</main>
       </div>
 
-      {/* Mobile Bottom Nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-surface-200 safe-area-inset-bottom z-50">
-        <div className="flex justify-around items-center h-16">
+      <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-surface-200 bg-white safe-area-inset-bottom md:hidden">
+        <div className="flex h-16 items-center justify-around">
           {navItems.slice(0, 5).map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className="flex flex-col items-center justify-center flex-1 h-full py-2 text-gray-500 hover:text-primary-600 transition-colors"
+              className="flex h-full flex-1 flex-col items-center justify-center py-2 text-gray-500 transition-colors hover:text-primary-600"
             >
               <item.icon className="h-5 w-5" />
-              <span className="text-xs mt-1">{item.label}</span>
+              <span className="mt-1 text-xs">{item.label}</span>
             </Link>
           ))}
         </div>
@@ -147,14 +163,13 @@ function NavLink({
   icon: typeof LayoutDashboard
   children: React.ReactNode
 }) {
-  // In real app, would use usePathname() to check active state
   const isActive = false
 
   return (
     <Link
       href={href}
       className={cn(
-        'flex items-center gap-3 px-3 py-2.5 rounded-button text-sm font-medium transition-colors',
+        'flex items-center gap-3 rounded-button px-3 py-2.5 text-sm font-medium transition-colors',
         isActive
           ? 'bg-primary-50 text-primary-700'
           : 'text-gray-600 hover:bg-surface-50 hover:text-gray-900'

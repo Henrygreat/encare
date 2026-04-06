@@ -1,7 +1,7 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   FileText,
   Check,
@@ -10,93 +10,94 @@ import {
   Users,
   AlertTriangle,
   Edit3,
-  Eye
-} from 'lucide-react'
-import { MobileHeader, PageContainer } from '@/components/layout/mobile-header'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Chip } from '@/components/ui/chip'
-import { Avatar } from '@/components/ui/avatar'
-import { formatDate, formatTime } from '@/lib/utils'
-
-// Demo data
-const DEMO_HANDOVER = {
-  id: 'h1',
-  shift_date: new Date().toISOString().split('T')[0],
-  shift_type: 'morning',
-  created_by: 'Sarah Johnson',
-  finalized_at: null,
-  auto_summary: {
-    total_logs: 24,
-    residents_logged: 6,
-    incidents: 0,
-    tasks_completed: 8,
-    tasks_pending: 3,
-  },
-  priority_items: [
-    { type: 'observation', text: 'Maggie Thompson - reduced appetite at breakfast, monitor at lunch', resident_id: '1' },
-    { type: 'task', text: 'Bob Wilson - hearing aid battery needs replacing', resident_id: '2' },
-  ],
-  manual_notes: '',
-  read_by: [
-    { user_id: 'u2', name: 'Mike Taylor', read_at: new Date(Date.now() - 30 * 60 * 1000).toISOString() },
-  ],
-}
-
-const PREVIOUS_HANDOVERS = [
-  {
-    id: 'h0',
-    shift_date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    shift_type: 'night',
-    created_by: 'Emma Wilson',
-    finalized_at: new Date(Date.now() - 16 * 60 * 60 * 1000).toISOString(),
-    summary: '6 residents, all settled. No incidents.',
-    read: true,
-  },
-  {
-    id: 'h-1',
-    shift_date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    shift_type: 'afternoon',
-    created_by: 'James Brown',
-    finalized_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-    summary: 'Dorothy had a good day. Bob\u2019s family visited.',
-    read: true,
-  },
-]
+  Eye,
+} from "lucide-react";
+import { MobileHeader, PageContainer } from "@/components/layout/mobile-header";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
+import { Avatar } from "@/components/ui/avatar";
+import { formatDate, formatTime } from "@/lib/utils";
+import {
+  useTodayHandover,
+  usePreviousHandovers,
+  useHandoverActions,
+  useAuth,
+} from "@/lib/hooks";
 
 export default function HandoverPage() {
-  const router = useRouter()
-  const [activeTab, setActiveTab] = useState<'current' | 'previous'>('current')
-  const [isEditing, setIsEditing] = useState(false)
-  const [notes, setNotes] = useState(DEMO_HANDOVER.manual_notes)
+  const router = useRouter();
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<"current" | "previous">("current");
+  const [isEditing, setIsEditing] = useState(false);
+  const [notes, setNotes] = useState("");
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const [isMarkingRead, setIsMarkingRead] = useState(false);
 
-  const isSeniorStaff = true // Would come from auth context
+  const { handover, isLoading: handoverLoading } = useTodayHandover();
+  const { handovers: previousHandovers, isLoading: previousLoading } =
+    usePreviousHandovers();
+  const { updateManualNotes, markAsRead } = useHandoverActions();
+
+  const isSeniorStaff = user?.role === "manager" || user?.role === "admin";
+
+  // Initialize notes from handover
+  useEffect(() => {
+    if (handover?.manual_notes) {
+      setNotes(handover.manual_notes);
+    }
+  }, [handover?.manual_notes]);
+
+  const handleSaveNotes = async () => {
+    if (!handover) return;
+    setIsSavingNotes(true);
+    const result = await updateManualNotes(handover.id, notes);
+    if (result.success) {
+      setIsEditing(false);
+    }
+    setIsSavingNotes(false);
+  };
+
+  const handleMarkAsRead = async () => {
+    if (!handover) return;
+    setIsMarkingRead(true);
+    const result = await markAsRead(handover.id);
+    setIsMarkingRead(false);
+  };
+
+  if (handoverLoading) {
+    return (
+      <PageContainer header={<MobileHeader title="Handover" />}>
+        <div className="p-4 text-center text-gray-500">Loading handover...</div>
+      </PageContainer>
+    );
+  }
 
   return (
-    <PageContainer
-      header={<MobileHeader title="Handover" />}
-    >
+    <PageContainer header={<MobileHeader title="Handover" />}>
       {/* Tabs */}
       <div className="flex gap-2 mb-4">
         <button
-          onClick={() => setActiveTab('current')}
+          onClick={() => setActiveTab("current")}
           className={`
             flex-1 py-3 rounded-button font-medium transition-colors
-            ${activeTab === 'current'
-              ? 'bg-primary-600 text-white'
-              : 'bg-surface-100 text-gray-700'
+            ${
+              activeTab === "current"
+                ? "bg-primary-600 text-white"
+                : "bg-surface-100 text-gray-700"
             }
           `}
         >
           Current Shift
         </button>
         <button
-          onClick={() => setActiveTab('previous')}
+          onClick={() => setActiveTab("previous")}
           className={`
             flex-1 py-3 rounded-button font-medium transition-colors
-            ${activeTab === 'previous'
-              ? 'bg-primary-600 text-white'
-              : 'bg-surface-100 text-gray-700'
+            ${
+              activeTab === "previous"
+                ? "bg-primary-600 text-white"
+                : "bg-surface-100 text-gray-700"
             }
           `}
         >
@@ -104,44 +105,45 @@ export default function HandoverPage() {
         </button>
       </div>
 
-      {activeTab === 'current' && (
+      {activeTab === "current" && handover && (
         <>
           {/* Shift Summary */}
           <Card className="mb-4" padding="md">
             <CardHeader>
               <CardTitle>Shift Summary</CardTitle>
               <Chip variant="primary" size="sm">
-                {DEMO_HANDOVER.shift_type}
+                {handover.shift_type || "morning"}
               </Chip>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-4">
                 <StatItem
                   icon={<FileText className="h-5 w-5 text-primary-600" />}
-                  value={DEMO_HANDOVER.auto_summary.total_logs}
+                  value={(handover.auto_summary as any)?.total_logs || 0}
                   label="Logs"
                 />
                 <StatItem
                   icon={<Users className="h-5 w-5 text-primary-600" />}
-                  value={DEMO_HANDOVER.auto_summary.residents_logged}
+                  value={(handover.auto_summary as any)?.residents_logged || 0}
                   label="Residents"
                 />
                 <StatItem
                   icon={<Check className="h-5 w-5 text-care-green" />}
-                  value={DEMO_HANDOVER.auto_summary.tasks_completed}
+                  value={(handover.auto_summary as any)?.tasks_completed || 0}
                   label="Tasks done"
                 />
                 <StatItem
                   icon={<Clock className="h-5 w-5 text-care-amber" />}
-                  value={DEMO_HANDOVER.auto_summary.tasks_pending}
+                  value={(handover.auto_summary as any)?.tasks_pending || 0}
                   label="Tasks pending"
                 />
               </div>
-              {DEMO_HANDOVER.auto_summary.incidents > 0 && (
+              {((handover.auto_summary as any)?.incidents || 0) > 0 && (
                 <div className="mt-4 p-3 bg-red-50 rounded-button flex items-center gap-2">
                   <AlertTriangle className="h-5 w-5 text-care-red" />
                   <span className="text-care-red font-medium">
-                    {DEMO_HANDOVER.auto_summary.incidents} incident(s) reported
+                    {(handover.auto_summary as any).incidents} incident(s)
+                    reported
                   </span>
                 </div>
               )}
@@ -149,7 +151,7 @@ export default function HandoverPage() {
           </Card>
 
           {/* Priority Items */}
-          {DEMO_HANDOVER.priority_items.length > 0 && (
+          {((handover.priority_items as any) || []).length > 0 && (
             <Card className="mb-4 border-amber-200 bg-amber-50" padding="md">
               <CardHeader>
                 <CardTitle className="text-amber-700 flex items-center gap-2">
@@ -159,15 +161,17 @@ export default function HandoverPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {DEMO_HANDOVER.priority_items.map((item, idx) => (
-                    <div
-                      key={idx}
-                      className="p-3 bg-white rounded-button flex items-start gap-3"
-                    >
-                      <div className="h-2 w-2 rounded-full bg-amber-500 mt-2 flex-shrink-0" />
-                      <p className="text-gray-700">{item.text}</p>
-                    </div>
-                  ))}
+                  {((handover.priority_items as any) || []).map(
+                    (item: any, idx: number) => (
+                      <div
+                        key={idx}
+                        className="p-3 bg-white rounded-button flex items-start gap-3"
+                      >
+                        <div className="h-2 w-2 rounded-full bg-amber-500 mt-2 flex-shrink-0" />
+                        <p className="text-gray-700">{item.text}</p>
+                      </div>
+                    ),
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -200,7 +204,9 @@ export default function HandoverPage() {
                     <Button
                       variant="primary"
                       size="sm"
-                      onClick={() => setIsEditing(false)}
+                      onClick={handleSaveNotes}
+                      isLoading={isSavingNotes}
+                      disabled={isSavingNotes}
                     >
                       Save
                     </Button>
@@ -208,9 +214,10 @@ export default function HandoverPage() {
                       variant="secondary"
                       size="sm"
                       onClick={() => {
-                        setNotes(DEMO_HANDOVER.manual_notes)
-                        setIsEditing(false)
+                        setNotes(handover.manual_notes || "");
+                        setIsEditing(false);
                       }}
+                      disabled={isSavingNotes}
                     >
                       Cancel
                     </Button>
@@ -218,7 +225,7 @@ export default function HandoverPage() {
                 </div>
               ) : (
                 <p className="text-gray-600">
-                  {notes || 'No additional notes. Tap edit to add.'}
+                  {notes || "No additional notes. Tap edit to add."}
                 </p>
               )}
             </CardContent>
@@ -230,9 +237,9 @@ export default function HandoverPage() {
               <CardTitle>Read By</CardTitle>
             </CardHeader>
             <CardContent>
-              {DEMO_HANDOVER.read_by.length > 0 ? (
+              {(handover.read_by_list || []).length > 0 ? (
                 <div className="space-y-2">
-                  {DEMO_HANDOVER.read_by.map((reader) => (
+                  {(handover.read_by_list || []).map((reader) => (
                     <div
                       key={reader.user_id}
                       className="flex items-center justify-between py-2"
@@ -248,16 +255,21 @@ export default function HandoverPage() {
                   ))}
                 </div>
               ) : (
-                <p className="text-gray-500 text-sm">
-                  Not yet read by anyone
-                </p>
+                <p className="text-gray-500 text-sm">Not yet read by anyone</p>
               )}
             </CardContent>
           </Card>
 
           {/* Mark as Read Button */}
           <div className="mt-4">
-            <Button fullWidth size="tap" variant="success">
+            <Button
+              fullWidth
+              size="tap"
+              variant="success"
+              onClick={handleMarkAsRead}
+              isLoading={isMarkingRead}
+              disabled={isMarkingRead}
+            >
               <Check className="h-5 w-5 mr-2" />
               Mark as Read
             </Button>
@@ -265,43 +277,59 @@ export default function HandoverPage() {
         </>
       )}
 
-      {activeTab === 'previous' && (
+      {activeTab === "current" && !handover && !handoverLoading && (
+        <div className="p-4 text-center text-gray-500">
+          No handover notes for today yet
+        </div>
+      )}
+
+      {activeTab === "previous" && (
         <div className="space-y-3">
-          {PREVIOUS_HANDOVERS.map((handover) => (
-            <Card
-              key={handover.id}
-              padding="md"
-              className="cursor-pointer hover:shadow-card-hover transition-shadow"
-              onClick={() => router.push(`/app/handover/${handover.id}`)}
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-medium text-gray-900">
-                      {formatDate(handover.shift_date)}
-                    </span>
-                    <Chip variant="default" size="sm">
-                      {handover.shift_type}
-                    </Chip>
-                    {handover.read && (
-                      <Check className="h-4 w-4 text-care-green" />
-                    )}
+          {previousLoading ? (
+            <div className="p-4 text-center text-gray-500">
+              Loading handovers...
+            </div>
+          ) : previousHandovers.length > 0 ? (
+            previousHandovers.map((handover) => (
+              <Card
+                key={handover.id}
+                padding="md"
+                className="cursor-pointer hover:shadow-card-hover transition-shadow"
+                onClick={() => router.push(`/app/handover/${handover.id}`)}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-medium text-gray-900">
+                        {formatDate(handover.shift_date)}
+                      </span>
+                      <Chip variant="default" size="sm">
+                        {handover.shift_type}
+                      </Chip>
+                      {handover.finalized_at && (
+                        <Check className="h-4 w-4 text-care-green" />
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-600 line-clamp-1">
+                      {handover.manual_notes || "Handover notes"}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      by {handover.created_by_name}
+                    </p>
                   </div>
-                  <p className="text-sm text-gray-600 line-clamp-1">
-                    {handover.summary}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    by {handover.created_by}
-                  </p>
+                  <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0" />
                 </div>
-                <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0" />
-              </div>
-            </Card>
-          ))}
+              </Card>
+            ))
+          ) : (
+            <div className="p-4 text-center text-gray-500">
+              No previous handovers
+            </div>
+          )}
         </div>
       )}
     </PageContainer>
-  )
+  );
 }
 
 function StatItem({
@@ -309,9 +337,9 @@ function StatItem({
   value,
   label,
 }: {
-  icon: React.ReactNode
-  value: number
-  label: string
+  icon: React.ReactNode;
+  value: number;
+  label: string;
 }) {
   return (
     <div className="flex items-center gap-3">
@@ -321,5 +349,5 @@ function StatItem({
         <p className="text-xs text-gray-500">{label}</p>
       </div>
     </div>
-  )
+  );
 }

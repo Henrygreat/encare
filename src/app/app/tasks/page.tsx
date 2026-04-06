@@ -1,217 +1,253 @@
-'use client'
+"use client";
 
-import { useState, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
-import { Clock, CheckCircle, AlertTriangle, Filter } from 'lucide-react'
-import { MobileHeader, PageContainer } from '@/components/layout/mobile-header'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { TaskList } from '@/components/ui/task-card'
-import { Chip } from '@/components/ui/chip'
-import type { Task } from '@/lib/database.types'
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Clock, CheckCircle, AlertTriangle } from "lucide-react";
+import { MobileHeader, PageContainer } from "@/components/layout/mobile-header";
+import { TaskList } from "@/components/ui/task-card";
+import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/hooks/use-auth";
+import type { Task } from "@/lib/database.types";
 
-// Demo data
-const DEMO_TASKS: Array<Task & { resident_name?: string }> = [
-  {
-    id: 't1',
-    organisation_id: 'org1',
-    resident_id: '1',
-    assigned_to: 'user1',
-    created_by: 'user1',
-    title: 'Morning medication - Maggie',
-    description: 'Administer morning meds including blood pressure medication',
-    task_type: 'medication',
-    priority: 'high',
-    status: 'pending',
-    due_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-    completed_at: null,
-    completed_by: null,
-    snoozed_until: null,
-    snooze_reason: null,
-    escalated_at: null,
-    escalated_to: null,
-    recurrence_rule: null,
-    parent_task_id: null,
-    metadata: {},
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    resident_name: 'Maggie Thompson',
-  },
-  {
-    id: 't2',
-    organisation_id: 'org1',
-    resident_id: '2',
-    assigned_to: 'user1',
-    created_by: 'user1',
-    title: 'Assist with breakfast - Bob',
-    description: 'Help with eating, ensure soft foods only',
-    task_type: 'meal',
-    priority: 'medium',
-    status: 'pending',
-    due_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-    completed_at: null,
-    completed_by: null,
-    snoozed_until: null,
-    snooze_reason: null,
-    escalated_at: null,
-    escalated_to: null,
-    recurrence_rule: null,
-    parent_task_id: null,
-    metadata: {},
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    resident_name: 'Bob Wilson',
-  },
-  {
-    id: 't3',
-    organisation_id: 'org1',
-    resident_id: '3',
-    assigned_to: 'user1',
-    created_by: 'user1',
-    title: 'Personal care - Dorothy',
-    description: 'Morning wash and dressing assistance',
-    task_type: 'personal_care',
-    priority: 'medium',
-    status: 'pending',
-    due_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-    completed_at: null,
-    completed_by: null,
-    snoozed_until: null,
-    snooze_reason: null,
-    escalated_at: null,
-    escalated_to: null,
-    recurrence_rule: null,
-    parent_task_id: null,
-    metadata: {},
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    resident_name: 'Dorothy Brown',
-  },
-  {
-    id: 't4',
-    organisation_id: 'org1',
-    resident_id: '1',
-    assigned_to: 'user1',
-    created_by: 'user1',
-    title: 'Blood sugar check - Maggie',
-    description: null,
-    task_type: 'observation',
-    priority: 'high',
-    status: 'completed',
-    due_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    completed_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    completed_by: 'user1',
-    snoozed_until: null,
-    snooze_reason: null,
-    escalated_at: null,
-    escalated_to: null,
-    recurrence_rule: null,
-    parent_task_id: null,
-    metadata: {},
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    resident_name: 'Maggie Thompson',
-  },
-  {
-    id: 't5',
-    organisation_id: 'org1',
-    resident_id: '2',
-    assigned_to: 'user1',
-    created_by: 'user1',
-    title: 'Hearing aid check - Bob',
-    description: null,
-    task_type: 'personal_care',
-    priority: 'low',
-    status: 'snoozed',
-    due_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-    completed_at: null,
-    completed_by: null,
-    snoozed_until: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
-    snooze_reason: 'Resident asleep',
-    escalated_at: null,
-    escalated_to: null,
-    recurrence_rule: null,
-    parent_task_id: null,
-    metadata: {},
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    resident_name: 'Bob Wilson',
-  },
-]
+type TaskWithResident = Task & {
+  resident_name?: string;
+};
 
-type TabType = 'due' | 'completed' | 'snoozed'
+type TabType = "due" | "completed" | "snoozed";
 
 export default function TasksPage() {
-  const router = useRouter()
-  const [activeTab, setActiveTab] = useState<TabType>('due')
+  const router = useRouter();
+  const supabase = createClient();
+  const { user, organisation, isLoading: authLoading } = useAuth();
 
-  const now = new Date()
+  const [activeTab, setActiveTab] = useState<TabType>("due");
+  const [tasks, setTasks] = useState<TaskWithResident[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [error, setError] = useState<string>("");
 
-  const overdueTasks = useMemo(() =>
-    DEMO_TASKS.filter(t =>
-      t.status === 'pending' && new Date(t.due_at) < now
-    ).sort((a, b) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime()),
-    []
-  )
+  const loadTasks = async () => {
+    if (!organisation?.id) return;
 
-  const upcomingTasks = useMemo(() =>
-    DEMO_TASKS.filter(t =>
-      t.status === 'pending' && new Date(t.due_at) >= now
-    ).sort((a, b) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime()),
-    []
-  )
+    setIsLoading(true);
+    setError("");
 
-  const completedTasks = useMemo(() =>
-    DEMO_TASKS.filter(t => t.status === 'completed')
-      .sort((a, b) => new Date(b.completed_at!).getTime() - new Date(a.completed_at!).getTime()),
-    []
-  )
+    try {
+      const { data, error } = await supabase
+        .from("tasks")
+        .select(
+          `
+          *,
+          residents (
+            first_name,
+            last_name,
+            preferred_name
+          )
+        `,
+        )
+        .eq("organisation_id", organisation.id)
+        .order("due_at", { ascending: true });
 
-  const snoozedTasks = useMemo(() =>
-    DEMO_TASKS.filter(t => t.status === 'snoozed'),
-    []
-  )
+      if (error) throw error;
 
-  const handleComplete = (task: Task) => {
-    console.log('Complete task:', task.id)
-    // Would update task status in Supabase
-  }
+      const mapped: TaskWithResident[] = (data || []).map((task: any) => {
+        const resident = Array.isArray(task.residents)
+          ? task.residents[0]
+          : task.residents;
+        const residentName = resident
+          ? `${resident.preferred_name || resident.first_name} ${resident.last_name}`
+          : undefined;
 
-  const handleSnooze = (task: Task) => {
-    console.log('Snooze task:', task.id)
-    // Would show snooze dialog
-  }
+        return {
+          ...task,
+          resident_name: residentName,
+        };
+      });
 
-  const handleEscalate = (task: Task) => {
-    console.log('Escalate task:', task.id)
-    // Would show escalation dialog
+      setTasks(mapped);
+    } catch (err) {
+      console.error("Failed to load tasks:", err);
+      setError("Unable to load tasks right now.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!authLoading && organisation?.id) {
+      void loadTasks();
+    }
+  }, [authLoading, organisation?.id]);
+
+  const handleComplete = async (task: Task) => {
+    if (!user?.id) return;
+    setActionLoadingId(task.id);
+
+    try {
+      const { error } = await supabase
+        .from("tasks")
+        .update({
+          status: "completed",
+          completed_at: new Date().toISOString(),
+          completed_by: user.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", task.id);
+
+      if (error) throw error;
+      await loadTasks();
+    } catch (err) {
+      console.error("Complete task error:", err);
+      alert("Unable to complete task.");
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleSnooze = async (task: Task) => {
+    setActionLoadingId(task.id);
+
+    try {
+      const snoozedUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+      const { error } = await supabase
+        .from("tasks")
+        .update({
+          status: "snoozed",
+          snoozed_until: snoozedUntil,
+          snooze_reason: "Snoozed for 1 hour",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", task.id);
+
+      if (error) throw error;
+      await loadTasks();
+    } catch (err) {
+      console.error("Snooze task error:", err);
+      alert("Unable to snooze task.");
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleEscalate = async (task: Task) => {
+    setActionLoadingId(task.id);
+
+    try {
+      const currentMetadata =
+        task.metadata && typeof task.metadata === "object" ? task.metadata : {};
+
+      const { error } = await supabase
+        .from("tasks")
+        .update({
+          escalated_at: new Date().toISOString(),
+          escalated_to: "manager",
+          metadata: {
+            ...currentMetadata,
+            escalated: true,
+          },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", task.id);
+
+      if (error) throw error;
+      await loadTasks();
+    } catch (err) {
+      console.error("Escalate task error:", err);
+      alert("Unable to escalate task.");
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const now = new Date();
+
+  const overdueTasks = useMemo(
+    () =>
+      tasks
+        .filter(
+          (t) =>
+            t.status === "pending" &&
+            t.due_at &&
+            new Date(t.due_at).getTime() < now.getTime(),
+        )
+        .sort(
+          (a, b) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime(),
+        ),
+    [tasks],
+  );
+
+  const upcomingTasks = useMemo(
+    () =>
+      tasks
+        .filter(
+          (t) =>
+            t.status === "pending" &&
+            t.due_at &&
+            new Date(t.due_at).getTime() >= now.getTime(),
+        )
+        .sort(
+          (a, b) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime(),
+        ),
+    [tasks],
+  );
+
+  const completedTasks = useMemo(
+    () =>
+      tasks
+        .filter((t) => t.status === "completed")
+        .sort(
+          (a, b) =>
+            new Date(b.completed_at || 0).getTime() -
+            new Date(a.completed_at || 0).getTime(),
+        ),
+    [tasks],
+  );
+
+  const snoozedTasks = useMemo(
+    () => tasks.filter((t) => t.status === "snoozed"),
+    [tasks],
+  );
+
+  if (authLoading || isLoading) {
+    return (
+      <PageContainer header={<MobileHeader title="Tasks" />}>
+        <div className="py-12 text-center text-gray-500">Loading tasks...</div>
+      </PageContainer>
+    );
   }
 
   return (
-    <PageContainer
-      header={<MobileHeader title="Tasks" />}
-    >
-      {/* Tabs */}
+    <PageContainer header={<MobileHeader title="Tasks" />}>
+      {error ? (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      ) : null}
+
       <div className="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide">
         <TabButton
-          active={activeTab === 'due'}
-          onClick={() => setActiveTab('due')}
+          active={activeTab === "due"}
+          onClick={() => setActiveTab("due")}
           icon={<Clock className="h-4 w-4" />}
           count={overdueTasks.length + upcomingTasks.length}
           alert={overdueTasks.length > 0}
         >
           Due
         </TabButton>
+
         <TabButton
-          active={activeTab === 'completed'}
-          onClick={() => setActiveTab('completed')}
+          active={activeTab === "completed"}
+          onClick={() => setActiveTab("completed")}
           icon={<CheckCircle className="h-4 w-4" />}
           count={completedTasks.length}
         >
           Done
         </TabButton>
+
         <TabButton
-          active={activeTab === 'snoozed'}
-          onClick={() => setActiveTab('snoozed')}
+          active={activeTab === "snoozed"}
+          onClick={() => setActiveTab("snoozed")}
           icon={<Clock className="h-4 w-4" />}
           count={snoozedTasks.length}
         >
@@ -219,10 +255,8 @@ export default function TasksPage() {
         </TabButton>
       </div>
 
-      {/* Task Lists */}
-      {activeTab === 'due' && (
+      {activeTab === "due" && (
         <div className="space-y-4">
-          {/* Overdue Section */}
           {overdueTasks.length > 0 && (
             <div>
               <div className="flex items-center gap-2 mb-2">
@@ -231,6 +265,7 @@ export default function TasksPage() {
                   Overdue ({overdueTasks.length})
                 </h3>
               </div>
+
               <TaskList
                 tasks={overdueTasks}
                 onTaskClick={(task) => router.push(`/app/tasks/${task.id}`)}
@@ -241,12 +276,12 @@ export default function TasksPage() {
             </div>
           )}
 
-          {/* Upcoming Section */}
           {upcomingTasks.length > 0 && (
             <div>
               <h3 className="font-semibold text-gray-700 mb-2">
                 Coming Up ({upcomingTasks.length})
               </h3>
+
               <TaskList
                 tasks={upcomingTasks}
                 onTaskClick={(task) => router.push(`/app/tasks/${task.id}`)}
@@ -266,7 +301,7 @@ export default function TasksPage() {
         </div>
       )}
 
-      {activeTab === 'completed' && (
+      {activeTab === "completed" && (
         <TaskList
           tasks={completedTasks}
           onTaskClick={(task) => router.push(`/app/tasks/${task.id}`)}
@@ -274,7 +309,7 @@ export default function TasksPage() {
         />
       )}
 
-      {activeTab === 'snoozed' && (
+      {activeTab === "snoozed" && (
         <TaskList
           tasks={snoozedTasks}
           onTaskClick={(task) => router.push(`/app/tasks/${task.id}`)}
@@ -282,7 +317,7 @@ export default function TasksPage() {
         />
       )}
     </PageContainer>
-  )
+  );
 }
 
 function TabButton({
@@ -293,36 +328,39 @@ function TabButton({
   count,
   alert,
 }: {
-  children: React.ReactNode
-  active: boolean
-  onClick: () => void
-  icon: React.ReactNode
-  count?: number
-  alert?: boolean
+  children: React.ReactNode;
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  count?: number;
+  alert?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
       className={`
         flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors flex-shrink-0
-        ${active
-          ? alert
-            ? 'bg-care-red text-white'
-            : 'bg-primary-600 text-white'
-          : 'bg-surface-100 text-gray-700 hover:bg-surface-200'
+        ${
+          active
+            ? alert
+              ? "bg-care-red text-white"
+              : "bg-primary-600 text-white"
+            : "bg-surface-100 text-gray-700 hover:bg-surface-200"
         }
       `}
     >
       {icon}
       {children}
       {count !== undefined && count > 0 && (
-        <span className={`
-          px-1.5 py-0.5 rounded-full text-xs
-          ${active ? 'bg-white/20' : 'bg-surface-200'}
-        `}>
+        <span
+          className={`
+            px-1.5 py-0.5 rounded-full text-xs
+            ${active ? "bg-white/20" : "bg-surface-200"}
+          `}
+        >
           {count}
         </span>
       )}
     </button>
-  )
+  );
 }

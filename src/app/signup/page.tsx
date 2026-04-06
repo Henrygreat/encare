@@ -13,7 +13,7 @@ export default function SignupPage() {
       <div className="space-y-4">
         <Card className="border-primary-100 bg-primary-50/70" padding="md">
           <p className="text-sm text-slate-700">
-            For the smoothest launch, we usually set up your first manager account, import sample residents,
+            For the smoothest launch, we usually set up your first manager account, import residents,
             and configure your task templates for you.
           </p>
         </Card>

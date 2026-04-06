@@ -1,386 +1,98 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import {
-  Search,
-  Plus,
-  Users,
-  UserCheck,
-  Clock,
-  AlertTriangle,
-  MoreVertical,
-  Mail,
-  Phone
-} from 'lucide-react'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { AlertTriangle, Clock, Mail, Phone, Plus, Search, Sparkles, UserCheck, Users } from 'lucide-react'
+import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Avatar } from '@/components/ui/avatar'
 import { Chip } from '@/components/ui/chip'
-import { formatDate, formatRelativeTime } from '@/lib/utils'
+import { createClient } from '@/lib/supabase/client'
+import { useAuth } from '@/lib/hooks/use-auth'
+import { formatRelativeTime } from '@/lib/utils'
 import type { User, UserRole } from '@/lib/database.types'
 
-// Demo data
-const DEMO_STAFF: Array<User & {
-  recentActivity?: {
-    logsToday: number
-    tasksCompleted: number
-    tasksOverdue: number
-    lastActive: string
-  }
-  assignedResidents?: number
-  shiftStatus?: 'on_shift' | 'off_shift' | 'break'
-}> = [
-  {
-    id: 'u1',
-    organisation_id: 'org1',
-    email: 'sarah.johnson@carehome.com',
-    full_name: 'Sarah Johnson',
-    role: 'senior_carer',
-    avatar_url: null,
-    phone: '07700 900001',
-    pin_hash: null,
-    is_active: true,
-    last_login_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-    preferences: {},
-    created_at: new Date('2023-01-15').toISOString(),
-    updated_at: new Date().toISOString(),
-    recentActivity: {
-      logsToday: 18,
-      tasksCompleted: 6,
-      tasksOverdue: 1,
-      lastActive: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-    },
-    assignedResidents: 3,
-    shiftStatus: 'on_shift',
-  },
-  {
-    id: 'u2',
-    organisation_id: 'org1',
-    email: 'mike.taylor@carehome.com',
-    full_name: 'Mike Taylor',
-    role: 'carer',
-    avatar_url: null,
-    phone: '07700 900002',
-    pin_hash: null,
-    is_active: true,
-    last_login_at: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-    preferences: {},
-    created_at: new Date('2023-03-20').toISOString(),
-    updated_at: new Date().toISOString(),
-    recentActivity: {
-      logsToday: 12,
-      tasksCompleted: 4,
-      tasksOverdue: 1,
-      lastActive: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-    },
-    assignedResidents: 2,
-    shiftStatus: 'on_shift',
-  },
-  {
-    id: 'u3',
-    organisation_id: 'org1',
-    email: 'emma.wilson@carehome.com',
-    full_name: 'Emma Wilson',
-    role: 'carer',
-    avatar_url: null,
-    phone: '07700 900003',
-    pin_hash: null,
-    is_active: true,
-    last_login_at: new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString(),
-    preferences: {},
-    created_at: new Date('2023-06-01').toISOString(),
-    updated_at: new Date().toISOString(),
-    recentActivity: {
-      logsToday: 8,
-      tasksCompleted: 3,
-      tasksOverdue: 0,
-      lastActive: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-    },
-    assignedResidents: 2,
-    shiftStatus: 'on_shift',
-  },
-  {
-    id: 'u4',
-    organisation_id: 'org1',
-    email: 'james.brown@carehome.com',
-    full_name: 'James Brown',
-    role: 'carer',
-    avatar_url: null,
-    phone: '07700 900004',
-    pin_hash: null,
-    is_active: true,
-    last_login_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-    preferences: {},
-    created_at: new Date('2023-08-15').toISOString(),
-    updated_at: new Date().toISOString(),
-    recentActivity: {
-      logsToday: 0,
-      tasksCompleted: 0,
-      tasksOverdue: 0,
-      lastActive: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-    },
-    assignedResidents: 0,
-    shiftStatus: 'off_shift',
-  },
-  {
-    id: 'u5',
-    organisation_id: 'org1',
-    email: 'admin@carehome.com',
-    full_name: 'Admin Manager',
-    role: 'manager',
-    avatar_url: null,
-    phone: '07700 900000',
-    pin_hash: null,
-    is_active: true,
-    last_login_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-    preferences: {},
-    created_at: new Date('2022-06-01').toISOString(),
-    updated_at: new Date().toISOString(),
-    recentActivity: {
-      logsToday: 0,
-      tasksCompleted: 0,
-      tasksOverdue: 0,
-      lastActive: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-    },
-    assignedResidents: 0,
-    shiftStatus: 'on_shift',
-  },
-]
-
-const ROLE_LABELS: Record<UserRole, string> = {
-  admin: 'Administrator',
-  manager: 'Manager',
-  senior_carer: 'Senior Carer',
-  carer: 'Care Worker',
-}
-
-const ROLE_COLORS: Record<UserRole, 'purple' | 'primary' | 'info' | 'default'> = {
-  admin: 'purple',
-  manager: 'purple',
-  senior_carer: 'primary',
-  carer: 'default',
-}
+type StaffRow = User & { shiftStatus: 'on_shift' | 'off_shift'; assignedResidents: number; logsToday: number; tasksCompleted: number; tasksOverdue: number; lastActive: string | null }
+const ROLE_LABELS: Record<UserRole, string> = { admin: 'Administrator', manager: 'Manager', senior_carer: 'Senior Carer', carer: 'Care Worker' }
+const ROLE_COLORS: Record<UserRole, 'purple' | 'primary' | 'info' | 'default'> = { admin: 'purple', manager: 'purple', senior_carer: 'primary', carer: 'default' }
 
 export default function StaffManagementPage() {
+  const { organisation, isLoading: authLoading } = useAuth()
+  const [staff, setStaff] = useState<StaffRow[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<'all' | UserRole>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | 'on_shift' | 'off_shift'>('all')
 
+  useEffect(() => {
+    async function loadStaff() {
+      if (!organisation?.id) return
+      setIsLoading(true)
+      setError(null)
+      try {
+        const supabase = createClient()
+        const today = new Date().toISOString().split('T')[0]
+        const startOfDay = new Date(); startOfDay.setHours(0,0,0,0)
+        const nowIso = new Date().toISOString()
+        const [staffResult, assignmentsResult, logsResult, tasksResult] = await Promise.all([
+          supabase.from('users').select('*').eq('organisation_id', organisation.id).eq('is_active', true).order('full_name'),
+          supabase.from('staff_assignments').select('user_id, resident_id').eq('shift_date', today),
+          supabase.from('daily_logs').select('logged_by, logged_at').eq('organisation_id', organisation.id).gte('logged_at', startOfDay.toISOString()),
+          supabase.from('tasks').select('assigned_to, status, due_at, completed_at').eq('organisation_id', organisation.id).or(`due_at.gte.${startOfDay.toISOString()},completed_at.gte.${startOfDay.toISOString()}`),
+        ])
+        if (staffResult.error) throw staffResult.error
+        if (assignmentsResult.error) throw assignmentsResult.error
+        if (logsResult.error) throw logsResult.error
+        if (tasksResult.error) throw tasksResult.error
+        const assignedResidents = new Map<string, Set<string>>()
+        for (const assignment of assignmentsResult.data || []) {
+          const current = assignedResidents.get(assignment.user_id) || new Set<string>(); current.add(assignment.resident_id); assignedResidents.set(assignment.user_id, current)
+        }
+        const logsToday = new Map<string, { count: number; lastActive: string | null }>()
+        for (const log of logsResult.data || []) {
+          const current = logsToday.get(log.logged_by) || { count: 0, lastActive: null }; logsToday.set(log.logged_by, { count: current.count + 1, lastActive: current.lastActive || log.logged_at })
+        }
+        const taskMeta = new Map<string, { completed: number; overdue: number }>()
+        for (const task of tasksResult.data || []) {
+          if (!task.assigned_to) continue
+          const current = taskMeta.get(task.assigned_to) || { completed: 0, overdue: 0 }
+          if (task.status === 'completed') current.completed += 1
+          if (task.status === 'pending' && task.due_at && new Date(task.due_at) < new Date(nowIso)) current.overdue += 1
+          taskMeta.set(task.assigned_to, current)
+        }
+        const staffRows = (staffResult.data || []) as User[]
+        setStaff(staffRows.map((member: User) => {
+          const logs = logsToday.get(member.id); const tasks = taskMeta.get(member.id); const assigned = assignedResidents.get(member.id)
+          return { ...member, shiftStatus: assigned && assigned.size > 0 ? 'on_shift' : 'off_shift', assignedResidents: assigned?.size || 0, logsToday: logs?.count || 0, tasksCompleted: tasks?.completed || 0, tasksOverdue: tasks?.overdue || 0, lastActive: logs?.lastActive || member.last_login_at }
+        }))
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unable to load staff')
+      } finally { setIsLoading(false) }
+    }
+    if (!authLoading) void loadStaff()
+  }, [authLoading, organisation?.id])
+
   const filteredStaff = useMemo(() => {
-    let staff = [...DEMO_STAFF]
+    let list = [...staff]
+    if (searchQuery) { const q = searchQuery.toLowerCase(); list = list.filter((member) => `${member.full_name} ${member.email}`.toLowerCase().includes(q)) }
+    if (roleFilter !== 'all') list = list.filter((member) => member.role === roleFilter)
+    if (statusFilter !== 'all') list = list.filter((member) => member.shiftStatus === statusFilter)
+    return list
+  }, [roleFilter, searchQuery, staff, statusFilter])
 
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
-      staff = staff.filter(
-        s =>
-          s.full_name.toLowerCase().includes(query) ||
-          s.email.toLowerCase().includes(query)
-      )
-    }
-
-    if (roleFilter !== 'all') {
-      staff = staff.filter(s => s.role === roleFilter)
-    }
-
-    if (statusFilter !== 'all') {
-      staff = staff.filter(s => s.shiftStatus === statusFilter)
-    }
-
-    return staff
-  }, [searchQuery, roleFilter, statusFilter])
-
-  const stats = {
-    total: DEMO_STAFF.length,
-    onShift: DEMO_STAFF.filter(s => s.shiftStatus === 'on_shift').length,
-    withOverdue: DEMO_STAFF.filter(s => (s.recentActivity?.tasksOverdue || 0) > 0).length,
-  }
+  const stats = useMemo(() => ({ total: staff.length, onShift: staff.filter((member) => member.shiftStatus === 'on_shift').length, withOverdue: staff.filter((member) => member.tasksOverdue > 0).length, recentlyActive: staff.filter((member) => member.lastActive && Date.now() - new Date(member.lastActive).getTime() < 60 * 60 * 1000).length }), [staff])
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Staff Management</h1>
-          <p className="text-gray-500">{stats.onShift} on shift, {stats.total} total</p>
-        </div>
-        <Button variant="primary">
-          <Plus className="h-4 w-4 mr-2" />
-          Add Staff Member
-        </Button>
-      </div>
-
-      {/* Quick Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <Card padding="md">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-primary-100 flex items-center justify-center">
-              <Users className="h-5 w-5 text-primary-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
-              <p className="text-sm text-gray-500">Total Staff</p>
-            </div>
-          </div>
-        </Card>
-        <Card padding="md">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center">
-              <UserCheck className="h-5 w-5 text-care-green" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{stats.onShift}</p>
-              <p className="text-sm text-gray-500">On Shift</p>
-            </div>
-          </div>
-        </Card>
-        <Card padding="md" className={stats.withOverdue > 0 ? 'border-care-amber' : ''}>
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-amber-100 flex items-center justify-center">
-              <AlertTriangle className="h-5 w-5 text-care-amber" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{stats.withOverdue}</p>
-              <p className="text-sm text-gray-500">With Overdue Tasks</p>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* Filters */}
-      <Card padding="md">
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1">
-            <Input
-              placeholder="Search by name or email..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              icon={<Search className="h-5 w-5" />}
-            />
-          </div>
-          <div className="flex gap-2">
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value as typeof roleFilter)}
-              className="h-12 px-4 rounded-button border border-surface-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
-            >
-              <option value="all">All Roles</option>
-              <option value="admin">Administrator</option>
-              <option value="manager">Manager</option>
-              <option value="senior_carer">Senior Carer</option>
-              <option value="carer">Care Worker</option>
-            </select>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-              className="h-12 px-4 rounded-button border border-surface-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
-            >
-              <option value="all">All Status</option>
-              <option value="on_shift">On Shift</option>
-              <option value="off_shift">Off Shift</option>
-            </select>
-          </div>
-        </div>
-      </Card>
-
-      {/* Staff Table */}
-      <Card padding="none">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="text-left text-sm text-gray-500 border-b border-surface-200 bg-surface-50">
-                <th className="p-4 font-medium">Staff Member</th>
-                <th className="p-4 font-medium">Role</th>
-                <th className="p-4 font-medium">Shift Status</th>
-                <th className="p-4 font-medium text-center">Residents</th>
-                <th className="p-4 font-medium text-center">Today&apos;s Logs</th>
-                <th className="p-4 font-medium text-center">Tasks Done</th>
-                <th className="p-4 font-medium text-center">Overdue</th>
-                <th className="p-4 font-medium">Last Active</th>
-                <th className="p-4 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-surface-100">
-              {filteredStaff.map((staff) => (
-                <tr key={staff.id} className="hover:bg-surface-50">
-                  <td className="p-4">
-                    <Link
-                      href={`/dashboard/staff/${staff.id}`}
-                      className="flex items-center gap-3"
-                    >
-                      <Avatar
-                        src={staff.avatar_url}
-                        name={staff.full_name}
-                        size="md"
-                      />
-                      <div>
-                        <p className="font-medium text-gray-900">{staff.full_name}</p>
-                        <p className="text-sm text-gray-500">{staff.email}</p>
-                      </div>
-                    </Link>
-                  </td>
-                  <td className="p-4">
-                    <Chip variant={ROLE_COLORS[staff.role]} size="sm">
-                      {ROLE_LABELS[staff.role]}
-                    </Chip>
-                  </td>
-                  <td className="p-4">
-                    <Chip
-                      variant={staff.shiftStatus === 'on_shift' ? 'success' : 'default'}
-                      size="sm"
-                    >
-                      {staff.shiftStatus === 'on_shift' ? 'On Shift' : 'Off Shift'}
-                    </Chip>
-                  </td>
-                  <td className="p-4 text-center text-gray-700">
-                    {staff.assignedResidents || 0}
-                  </td>
-                  <td className="p-4 text-center font-medium text-gray-700">
-                    {staff.recentActivity?.logsToday || 0}
-                  </td>
-                  <td className="p-4 text-center font-medium text-care-green">
-                    {staff.recentActivity?.tasksCompleted || 0}
-                  </td>
-                  <td className="p-4 text-center">
-                    {(staff.recentActivity?.tasksOverdue || 0) > 0 ? (
-                      <span className="font-medium text-care-red">
-                        {staff.recentActivity?.tasksOverdue}
-                      </span>
-                    ) : (
-                      <span className="text-gray-400">0</span>
-                    )}
-                  </td>
-                  <td className="p-4 text-sm text-gray-500">
-                    {staff.recentActivity?.lastActive
-                      ? formatRelativeTime(staff.recentActivity.lastActive)
-                      : 'Never'}
-                  </td>
-                  <td className="p-4">
-                    <div className="flex items-center gap-2">
-                      <Link
-                        href={`/dashboard/staff/${staff.id}`}
-                        className="text-primary-600 text-sm font-medium hover:underline"
-                      >
-                        View
-                      </Link>
-                      <button className="p-1 text-gray-400 hover:text-gray-600">
-                        <MoreVertical className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {filteredStaff.length === 0 && (
-          <div className="p-8 text-center text-gray-500">
-            No staff members match your search criteria
-          </div>
-        )}
-      </Card>
+    <div className="mx-auto max-w-7xl space-y-6">
+      <div className="overflow-hidden rounded-[28px] border border-white/60 bg-gradient-to-br from-primary-700 via-sky-700 to-slate-900 p-6 text-white shadow-2xl shadow-sky-900/10"><div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div className="max-w-2xl"><div className="mb-3 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-sky-100"><Sparkles className="h-3.5 w-3.5" />Live staffing board</div><h1 className="text-3xl font-semibold tracking-tight">See team capacity, workload, and momentum in one place</h1><p className="mt-2 text-sm text-sky-100/90">Real assignments, real task pressure, and who is keeping the shift moving.</p></div><Link href="/app/profile"><Button variant="secondary" className="border-white/30 bg-white/10 text-white hover:bg-white/20"><Plus className="mr-2 h-4 w-4" />Review team profile</Button></Link></div></div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><MetricCard label="Team members" value={stats.total} copy="Active staff in this organisation" /><MetricCard label="On shift" value={stats.onShift} copy="Currently assigned to residents" /><MetricCard label="Overdue workload" value={stats.withOverdue} copy="Staff carrying overdue tasks" tone="warning" /><MetricCard label="Active in last hour" value={stats.recentlyActive} copy="Recently logging or signing in" tone="success" /></div>
+      <Card className="border-white/70 bg-white/80 shadow-xl shadow-slate-200/60 backdrop-blur" padding="md"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div className="relative flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><Input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search by staff name or email" className="pl-9" /></div><div className="flex flex-wrap gap-2"><FilterSelect value={roleFilter} onChange={setRoleFilter} options={[['all', 'All roles'], ['admin', 'Administrators'], ['manager', 'Managers'], ['senior_carer', 'Senior carers'], ['carer', 'Care workers']]} /><FilterSelect value={statusFilter} onChange={setStatusFilter} options={[['all', 'All statuses'], ['on_shift', 'On shift'], ['off_shift', 'Off shift']]} /></div></div></Card>
+      {isLoading ? <Card padding="lg"><p className="text-center text-slate-500">Loading staff…</p></Card> : error ? <Card padding="lg"><p className="text-center text-care-red">{error}</p></Card> : filteredStaff.length === 0 ? <Card padding="lg"><p className="text-center text-slate-500">No staff matched your current filters.</p></Card> : <div className="grid gap-4 lg:grid-cols-2">{filteredStaff.map((member) => <Link key={member.id} href={`/dashboard/staff/${member.id}`}><Card className="group h-full border-white/70 bg-white/85 shadow-lg shadow-slate-200/70 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-sky-100/80" padding="lg"><div className="flex items-start justify-between gap-4"><div className="flex min-w-0 gap-4"><Avatar src={member.avatar_url} name={member.full_name} size="lg" /><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate text-lg font-semibold text-slate-900">{member.full_name}</h2><Chip variant={ROLE_COLORS[member.role]} size="sm">{ROLE_LABELS[member.role]}</Chip><Chip size="sm" variant={member.shiftStatus === 'on_shift' ? 'success' : 'default'}>{member.shiftStatus === 'on_shift' ? 'On shift' : 'Off shift'}</Chip></div><div className="mt-3 space-y-1.5 text-sm text-slate-500"><div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5" />{member.email}</div>{member.phone ? <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5" />{member.phone}</div> : null}<div className="flex items-center gap-2"><Clock className="h-3.5 w-3.5" />{member.lastActive ? `Last active ${formatRelativeTime(member.lastActive)}` : 'No recent activity'}</div></div><div className="mt-4 grid grid-cols-3 gap-2"><MiniStat icon={<Users className="h-3.5 w-3.5" />} value={member.assignedResidents} label="Assigned" /><MiniStat icon={<UserCheck className="h-3.5 w-3.5" />} value={member.logsToday} label="Logs" /><MiniStat icon={<AlertTriangle className="h-3.5 w-3.5" />} value={member.tasksOverdue} label="Overdue" highlight={member.tasksOverdue > 0} /></div></div></div></div></Card></Link>)}</div>}
     </div>
   )
 }
+function MetricCard({ label, value, copy, tone = 'default' }: { label: string; value: number; copy: string; tone?: 'default' | 'warning' | 'success' }) { const toneClass = tone === 'warning' ? 'from-amber-50 to-white border-amber-100' : tone === 'success' ? 'from-emerald-50 to-white border-emerald-100' : 'from-white to-slate-50 border-white/70'; return <Card className={`border bg-gradient-to-br ${toneClass} shadow-lg shadow-slate-200/60`} padding="md"><p className="text-sm font-medium text-slate-500">{label}</p><p className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">{value}</p><p className="mt-2 text-sm text-slate-500">{copy}</p></Card> }
+function MiniStat({ icon, value, label, highlight = false }: { icon: React.ReactNode; value: number; label: string; highlight?: boolean }) { return <div className={`rounded-2xl border px-3 py-2 ${highlight ? 'border-amber-200 bg-amber-50' : 'border-slate-100 bg-slate-50'}`}><div className="mb-1 flex items-center gap-1 text-slate-400">{icon}<span className="text-[11px] font-medium uppercase tracking-wide">{label}</span></div><div className={`text-xl font-semibold ${highlight ? 'text-amber-700' : 'text-slate-900'}`}>{value}</div></div> }
+function FilterSelect<T extends string>({ value, onChange, options }: { value: T; onChange: (value: T) => void; options: Array<[T, string]> }) { return <select value={value} onChange={(event) => onChange(event.target.value as T)} className="h-10 rounded-button border border-surface-200 bg-white px-4 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500">{options.map(([optionValue, label]) => <option key={optionValue} value={optionValue}>{label}</option>)}</select> }
