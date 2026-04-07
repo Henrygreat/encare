@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useAuthStore } from '@/lib/stores/auth-store'
+import { useAuth } from '@/lib/hooks/use-auth'
 import { useOfflineStore } from '@/lib/stores/offline-store'
 import { generateOfflineId } from '@/lib/utils'
 import type { DailyLog, DailyLogInsert, LogType, TimelineEvent } from '@/lib/database.types'
@@ -25,7 +25,6 @@ export function useResidentTimeline(residentId: string, limit = 20) {
     try {
       const supabase = createClient()
 
-      // Fetch daily logs with user info
       const { data: logs, error: logsError } = await supabase
         .from('daily_logs')
         .select(`
@@ -74,72 +73,87 @@ export function useResidentTimeline(residentId: string, limit = 20) {
 }
 
 export function useCreateLog() {
-  const { user } = useAuthStore()
+  const { user, organisation, isLoading: authLoading } = useAuth()
   const { isOnline, addToQueue } = useOfflineStore()
   const [isLoading, setIsLoading] = useState(false)
 
-  const createLog = useCallback(async (data: {
-    residentId: string
-    logType: LogType
-    logData: Record<string, any>
-    notes?: string
-    taskId?: string
-  }) => {
-    if (!user) return { success: false, error: 'Not authenticated' }
-
-    setIsLoading(true)
-
-    const logEntry: DailyLogInsert = {
-      organisation_id: user.organisation_id,
-      resident_id: data.residentId,
-      logged_by: user.id,
-      log_type: data.logType,
-      log_data: data.logData,
-      notes: data.notes || null,
-      logged_at: new Date().toISOString(),
-      task_id: data.taskId || null,
-      sync_status: isOnline ? 'synced' : 'pending',
-      offline_id: generateOfflineId(),
-    }
-
-    try {
-      if (isOnline) {
-        const supabase = createClient()
-        const { error } = await supabase
-          .from('daily_logs')
-          .insert(logEntry)
-
-        if (error) throw error
-      } else {
-        // Queue for offline sync
-        addToQueue({
-          ...logEntry,
-          id: logEntry.offline_id!,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          queued_at: Date.now(),
-        } as any)
+  const createLog = useCallback(
+    async (data: {
+      residentId: string
+      logType: LogType
+      logData: Record<string, any>
+      notes?: string
+      taskId?: string
+    }) => {
+      if (authLoading) {
+        return { success: false, error: 'Still loading your account. Please try again.' }
       }
 
-      return { success: true, isOffline: !isOnline }
-    } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : 'Failed to create log' }
-    } finally {
-      setIsLoading(false)
-    }
-  }, [user, isOnline, addToQueue])
+      if (!user?.id || !organisation?.id) {
+        return { success: false, error: 'Not authenticated' }
+      }
 
-  return { createLog, isLoading }
+      setIsLoading(true)
+
+      const logEntry: DailyLogInsert = {
+        organisation_id: organisation.id,
+        resident_id: data.residentId,
+        logged_by: user.id,
+        log_type: data.logType,
+        log_data: data.logData,
+        notes: data.notes || null,
+        logged_at: new Date().toISOString(),
+        task_id: data.taskId || null,
+        sync_status: isOnline ? 'synced' : 'pending',
+        offline_id: generateOfflineId(),
+      }
+
+      try {
+        if (isOnline) {
+          const supabase = createClient()
+          const { error } = await supabase.from('daily_logs').insert(logEntry)
+
+          if (error) throw error
+        } else {
+          addToQueue({
+            ...logEntry,
+            id: logEntry.offline_id!,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            queued_at: Date.now(),
+          } as any)
+        }
+
+        return { success: true, isOffline: !isOnline }
+      } catch (err) {
+        return {
+          success: false,
+          error: err instanceof Error ? err.message : 'Failed to create log',
+        }
+      } finally {
+        setIsLoading(false)
+      }
+    },
+    [authLoading, user?.id, organisation?.id, isOnline, addToQueue],
+  )
+
+  return { createLog, isLoading, authLoading }
 }
 
 export function useTodayLogs(residentId?: string) {
   const [logs, setLogs] = useState<DailyLog[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const { user } = useAuthStore()
+  const { user, organisation, isLoading: authLoading } = useAuth()
 
   useEffect(() => {
     async function fetchLogs() {
-      if (!user?.organisation_id) return
+      if (authLoading) return
+
+      const organisationId = organisation?.id || user?.organisation_id
+      if (!organisationId) {
+        setIsLoading(false)
+        return
+      }
 
       setIsLoading(true)
 
@@ -151,7 +165,7 @@ export function useTodayLogs(residentId?: string) {
         let query = supabase
           .from('daily_logs')
           .select('*')
-          .eq('organisation_id', user.organisation_id)
+          .eq('organisation_id', organisationId)
           .gte('logged_at', startOfDay.toISOString())
           .order('logged_at', { ascending: false })
 
@@ -171,7 +185,7 @@ export function useTodayLogs(residentId?: string) {
     }
 
     fetchLogs()
-  }, [user?.organisation_id, residentId])
+  }, [authLoading, organisation?.id, user?.organisation_id, residentId])
 
   return { logs, isLoading }
 }
