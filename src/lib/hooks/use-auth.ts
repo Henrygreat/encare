@@ -65,6 +65,12 @@ export function useAuth() {
 
       setUser(userData as User)
 
+      if (!userData.organisation_id) {
+        console.error('Authenticated user has no organisation_id')
+        setOrganisation(null as unknown as Organisation)
+        return
+      }
+
       const { data: orgData, error: orgError } = await supabase
         .from('organisations')
         .select('*')
@@ -73,13 +79,16 @@ export function useAuth() {
 
       if (orgError) {
         console.error('Organisation lookup failed:', orgError.message)
-        clear()
+        setOrganisation(null as unknown as Organisation)
         return
       }
 
       if (!orgData) {
-        console.error('No organisation found for user')
-        clear()
+        console.error('No organisation found for user', {
+          userId: userData.id,
+          organisationId: userData.organisation_id,
+        })
+        setOrganisation(null as unknown as Organisation)
         return
       }
 
@@ -100,19 +109,25 @@ export function useAuth() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
-      if (event === 'SIGNED_OUT') {
-        clear()
-        router.replace('/login')
-        return
-      }
-
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-        if (session?.user) {
-          void initializeAuth()
+    } = supabase.auth.onAuthStateChange(
+      (event: AuthChangeEvent, session: Session | null) => {
+        if (event === 'SIGNED_OUT') {
+          clear()
+          router.replace('/login')
+          return
         }
-      }
-    })
+
+        if (
+          event === 'SIGNED_IN' ||
+          event === 'TOKEN_REFRESHED' ||
+          event === 'USER_UPDATED'
+        ) {
+          if (session?.user) {
+            void initializeAuth()
+          }
+        }
+      },
+    )
 
     return () => {
       subscription.unsubscribe()
@@ -135,7 +150,10 @@ export function useAuth() {
     async (email: string, password: string) => {
       try {
         const supabase = createClient()
-        const { error } = await supabase.auth.signInWithPassword({ email, password })
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        })
 
         if (error) {
           return { success: false, error: error.message }
@@ -148,7 +166,7 @@ export function useAuth() {
         return { success: false, error: 'Unable to sign in right now.' }
       }
     },
-    [initializeAuth]
+    [initializeAuth],
   )
 
   return {

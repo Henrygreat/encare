@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle, Clock } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, CheckCircle, Clock, Plus } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/hooks/use-auth";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -160,11 +161,19 @@ export default function DashboardTasksPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Manager tasks</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Monitor overdue work, snoozed tasks, and operational exceptions.
-        </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Manager tasks</h1>
+          <p className="mt-1 text-sm text-slate-600">
+            Monitor overdue work, snoozed tasks, and operational exceptions.
+          </p>
+        </div>
+        <Link href="/dashboard/tasks/new">
+          <Button>
+            <Plus className="mr-2 h-4 w-4" />
+            Add task
+          </Button>
+        </Link>
       </div>
 
       {error ? (

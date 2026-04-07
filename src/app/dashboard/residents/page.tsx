@@ -119,7 +119,10 @@ export default function ResidentsManagementPage() {
             <h1 className="text-3xl font-semibold tracking-tight">Resident management, grounded in live care data</h1>
             <p className="mt-2 text-sm text-slate-200">Keep room status, risk flags, overdue care, and recent activity in one calm workspace.</p>
           </div>
-          <Link href="/app/residents"><Button variant="secondary" className="border-white/30 bg-white/10 text-white hover:bg-white/20"><Plus className="mr-2 h-4 w-4" />Open care workspace</Button></Link>
+          <div className="flex flex-wrap gap-3">
+            <Link href="/dashboard/residents/new"><Button variant="primary" className="bg-white text-slate-900 hover:bg-white/90"><Plus className="mr-2 h-4 w-4" />Add resident</Button></Link>
+            <Link href="/app/residents"><Button variant="secondary" className="border-white/30 bg-white/10 text-white hover:bg-white/20">Open care workspace</Button></Link>
+          </div>
         </div>
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
