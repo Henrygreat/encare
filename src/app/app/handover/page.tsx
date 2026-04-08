@@ -10,7 +10,6 @@ import {
   Users,
   AlertTriangle,
   Edit3,
-  Eye,
 } from "lucide-react";
 import { MobileHeader, PageContainer } from "@/components/layout/mobile-header";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -24,6 +23,36 @@ import {
   useHandoverActions,
   useAuth,
 } from "@/lib/hooks";
+
+function normalizePriorityItems(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((item: unknown) => {
+      if (typeof item === "string") return item.trim();
+
+      if (item && typeof item === "object") {
+        const record = item as Record<string, unknown>;
+
+        if (typeof record.text === "string") return record.text.trim();
+        if (typeof record.title === "string") return record.title.trim();
+        if (typeof record.note === "string") return record.note.trim();
+        if (typeof record.description === "string")
+          return record.description.trim();
+        if (typeof record.message === "string") return record.message.trim();
+      }
+
+      return "";
+    })
+    .filter((text) => text.length > 0);
+}
+
+function getSummaryValue(summary: unknown, key: string, fallback = 0): number {
+  if (!summary || typeof summary !== "object") return fallback;
+
+  const value = (summary as Record<string, unknown>)[key];
+  return typeof value === "number" ? value : fallback;
+}
 
 export default function HandoverPage() {
   const router = useRouter();
@@ -41,28 +70,48 @@ export default function HandoverPage() {
 
   const isSeniorStaff = user?.role === "manager" || user?.role === "admin";
 
-  // Initialize notes from handover
   useEffect(() => {
-    if (handover?.manual_notes) {
-      setNotes(handover.manual_notes);
-    }
+    setNotes(handover?.manual_notes || "");
   }, [handover?.manual_notes]);
 
   const handleSaveNotes = async () => {
     if (!handover) return;
+
     setIsSavingNotes(true);
-    const result = await updateManualNotes(handover.id, notes);
-    if (result.success) {
-      setIsEditing(false);
+
+    try {
+      const result = await updateManualNotes(handover.id, notes);
+
+      if (result.success) {
+        setIsEditing(false);
+      } else {
+        alert(result.error || "Unable to save handover notes.");
+      }
+    } catch (error) {
+      console.error("Save handover notes error:", error);
+      alert("Unable to save handover notes.");
+    } finally {
+      setIsSavingNotes(false);
     }
-    setIsSavingNotes(false);
   };
 
   const handleMarkAsRead = async () => {
     if (!handover) return;
+
     setIsMarkingRead(true);
-    const result = await markAsRead(handover.id);
-    setIsMarkingRead(false);
+
+    try {
+      const result = await markAsRead(handover.id);
+
+      if (!result.success) {
+        alert(result.error || "Unable to mark handover as read.");
+      }
+    } catch (error) {
+      console.error("Mark handover as read error:", error);
+      alert("Unable to mark handover as read.");
+    } finally {
+      setIsMarkingRead(false);
+    }
   };
 
   if (handoverLoading) {
@@ -73,9 +122,11 @@ export default function HandoverPage() {
     );
   }
 
+  const summary = handover?.auto_summary;
+  const priorityItems = normalizePriorityItems(handover?.priority_items);
+
   return (
     <PageContainer header={<MobileHeader title="Handover" />}>
-      {/* Tabs */}
       <div className="flex gap-2 mb-4">
         <button
           onClick={() => setActiveTab("current")}
@@ -90,6 +141,7 @@ export default function HandoverPage() {
         >
           Current Shift
         </button>
+
         <button
           onClick={() => setActiveTab("previous")}
           className={`
@@ -107,7 +159,6 @@ export default function HandoverPage() {
 
       {activeTab === "current" && handover && (
         <>
-          {/* Shift Summary */}
           <Card className="mb-4" padding="md">
             <CardHeader>
               <CardTitle>Shift Summary</CardTitle>
@@ -115,72 +166,80 @@ export default function HandoverPage() {
                 {handover.shift_type || "morning"}
               </Chip>
             </CardHeader>
+
             <CardContent>
               <div className="grid grid-cols-2 gap-4">
                 <StatItem
                   icon={<FileText className="h-5 w-5 text-primary-600" />}
-                  value={(handover.auto_summary as any)?.total_logs || 0}
+                  value={getSummaryValue(summary, "total_logs")}
                   label="Logs"
                 />
+
                 <StatItem
                   icon={<Users className="h-5 w-5 text-primary-600" />}
-                  value={(handover.auto_summary as any)?.residents_logged || 0}
+                  value={getSummaryValue(summary, "residents_logged")}
                   label="Residents"
                 />
+
                 <StatItem
                   icon={<Check className="h-5 w-5 text-care-green" />}
-                  value={(handover.auto_summary as any)?.tasks_completed || 0}
+                  value={getSummaryValue(summary, "tasks_completed")}
                   label="Tasks done"
                 />
+
                 <StatItem
                   icon={<Clock className="h-5 w-5 text-care-amber" />}
-                  value={(handover.auto_summary as any)?.tasks_pending || 0}
+                  value={getSummaryValue(summary, "tasks_pending")}
                   label="Tasks pending"
                 />
               </div>
-              {((handover.auto_summary as any)?.incidents || 0) > 0 && (
+
+              {getSummaryValue(summary, "incidents") > 0 && (
                 <div className="mt-4 p-3 bg-red-50 rounded-button flex items-center gap-2">
                   <AlertTriangle className="h-5 w-5 text-care-red" />
                   <span className="text-care-red font-medium">
-                    {(handover.auto_summary as any).incidents} incident(s)
-                    reported
+                    {getSummaryValue(summary, "incidents")} incident(s) reported
                   </span>
                 </div>
               )}
             </CardContent>
           </Card>
 
-          {/* Priority Items */}
-          {((handover.priority_items as any) || []).length > 0 && (
-            <Card className="mb-4 border-amber-200 bg-amber-50" padding="md">
-              <CardHeader>
-                <CardTitle className="text-amber-700 flex items-center gap-2">
-                  <AlertTriangle className="h-5 w-5" />
-                  Priority Items
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {((handover.priority_items as any) || []).map(
-                    (item: any, idx: number) => (
-                      <div
-                        key={idx}
-                        className="p-3 bg-white rounded-button flex items-start gap-3"
-                      >
-                        <div className="h-2 w-2 rounded-full bg-amber-500 mt-2 flex-shrink-0" />
-                        <p className="text-gray-700">{item.text}</p>
-                      </div>
-                    ),
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          <Card className="mb-4 border-amber-200 bg-amber-50" padding="md">
+            <CardHeader>
+              <CardTitle className="text-amber-700 flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5" />
+                Priority Items
+              </CardTitle>
+            </CardHeader>
 
-          {/* Manual Notes */}
+            <CardContent>
+              {priorityItems.length > 0 ? (
+                <div className="space-y-3">
+                  {priorityItems.map((text, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 bg-white rounded-button flex items-start gap-3"
+                    >
+                      <div className="h-2 w-2 rounded-full bg-amber-500 mt-2 flex-shrink-0" />
+                      <p className="text-gray-700">{text}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-3 bg-white rounded-button">
+                  <p className="text-sm text-amber-800">
+                    No urgent priority items for this handover.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           <Card className="mb-4" padding="md">
             <CardHeader>
               <CardTitle>Handover Notes</CardTitle>
+
               {isSeniorStaff && !isEditing && (
                 <button
                   onClick={() => setIsEditing(true)}
@@ -190,6 +249,7 @@ export default function HandoverPage() {
                 </button>
               )}
             </CardHeader>
+
             <CardContent>
               {isEditing ? (
                 <div className="space-y-3">
@@ -200,6 +260,7 @@ export default function HandoverPage() {
                     rows={4}
                     className="w-full rounded-button border border-surface-200 bg-white px-4 py-3 text-base text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
                   />
+
                   <div className="flex gap-2">
                     <Button
                       variant="primary"
@@ -210,6 +271,7 @@ export default function HandoverPage() {
                     >
                       Save
                     </Button>
+
                     <Button
                       variant="secondary"
                       size="sm"
@@ -231,11 +293,11 @@ export default function HandoverPage() {
             </CardContent>
           </Card>
 
-          {/* Read By */}
           <Card padding="md">
             <CardHeader>
               <CardTitle>Read By</CardTitle>
             </CardHeader>
+
             <CardContent>
               {(handover.read_by_list || []).length > 0 ? (
                 <div className="space-y-2">
@@ -248,6 +310,7 @@ export default function HandoverPage() {
                         <Avatar name={reader.name} size="sm" />
                         <span className="text-gray-700">{reader.name}</span>
                       </div>
+
                       <span className="text-sm text-gray-500">
                         {formatTime(reader.read_at)}
                       </span>
@@ -260,7 +323,6 @@ export default function HandoverPage() {
             </CardContent>
           </Card>
 
-          {/* Mark as Read Button */}
           <div className="mt-4">
             <Button
               fullWidth
@@ -303,20 +365,25 @@ export default function HandoverPage() {
                       <span className="font-medium text-gray-900">
                         {formatDate(handover.shift_date)}
                       </span>
+
                       <Chip variant="default" size="sm">
                         {handover.shift_type}
                       </Chip>
+
                       {handover.finalized_at && (
                         <Check className="h-4 w-4 text-care-green" />
                       )}
                     </div>
+
                     <p className="text-sm text-gray-600 line-clamp-1">
                       {handover.manual_notes || "Handover notes"}
                     </p>
+
                     <p className="text-xs text-gray-400 mt-1">
                       by {handover.created_by_name}
                     </p>
                   </div>
+
                   <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0" />
                 </div>
               </Card>
