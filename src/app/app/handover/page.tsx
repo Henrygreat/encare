@@ -24,25 +24,6 @@ import {
   useAuth,
 } from "@/lib/hooks";
 
-type PriorityItemLike =
-  | string
-  | {
-      text?: string;
-      label?: string;
-      title?: string;
-    }
-  | null
-  | undefined;
-
-function getPriorityItemText(item: PriorityItemLike): string {
-  if (!item) return "";
-  if (typeof item === "string") return item.trim();
-  if (typeof item === "object") {
-    return String(item.text || item.label || item.title || "").trim();
-  }
-  return "";
-}
-
 export default function HandoverPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -58,6 +39,7 @@ export default function HandoverPage() {
   const { updateManualNotes, markAsRead } = useHandoverActions();
 
   const isSeniorStaff = user?.role === "manager" || user?.role === "admin";
+  const priorityItems = handover?.priority_items_list || [];
 
   useEffect(() => {
     if (handover?.manual_notes) {
@@ -66,12 +48,6 @@ export default function HandoverPage() {
       setNotes("");
     }
   }, [handover?.manual_notes]);
-
-  const priorityItems = (
-    ((handover?.priority_items as any) || []) as PriorityItemLike[]
-  )
-    .map(getPriorityItemText)
-    .filter(Boolean);
 
   const handleSaveNotes = async () => {
     if (!handover) return;
@@ -184,13 +160,13 @@ export default function HandoverPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {priorityItems.map((text, idx) => (
+                  {priorityItems.map((item, idx) => (
                     <div
-                      key={`${text}-${idx}`}
+                      key={`${item}-${idx}`}
                       className="flex items-start gap-3 rounded-button border border-amber-100 bg-white px-4 py-3"
                     >
                       <div className="mt-2 h-2.5 w-2.5 flex-shrink-0 rounded-full bg-amber-500" />
-                      <p className="text-sm leading-6 text-gray-800">{text}</p>
+                      <p className="text-sm leading-6 text-gray-800">{item}</p>
                     </div>
                   ))}
                 </div>
