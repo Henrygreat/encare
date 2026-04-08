@@ -24,6 +24,16 @@ import {
   useAuth,
 } from "@/lib/hooks";
 
+type PriorityItemLike =
+  | string
+  | {
+      text?: string;
+      label?: string;
+      title?: string;
+    }
+  | null
+  | undefined;
+
 export default function HandoverPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -39,7 +49,19 @@ export default function HandoverPage() {
   const { updateManualNotes, markAsRead } = useHandoverActions();
 
   const isSeniorStaff = user?.role === "manager" || user?.role === "admin";
-  const priorityItems = handover?.priority_items_list || [];
+
+  const priorityItems = (
+    ((handover?.priority_items as any) || []) as PriorityItemLike[]
+  )
+    .map((item) => {
+      if (!item) return "";
+      if (typeof item === "string") return item.trim();
+      if (typeof item === "object") {
+        return String(item.text || item.label || item.title || "").trim();
+      }
+      return "";
+    })
+    .filter(Boolean);
 
   useEffect(() => {
     if (handover?.manual_notes) {
