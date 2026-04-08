@@ -7,15 +7,25 @@ import {
   FileBarChart,
   Settings,
   Bell,
-  LogOut
+  LogOut,
+  ClipboardList,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { cn } from '@/lib/utils'
+import type { UserRole } from '@/lib/database.types'
 
-const navItems = [
+type NavItem = {
+  href: string
+  icon: typeof LayoutDashboard
+  label: string
+  roles?: UserRole[]
+}
+
+const navItems: NavItem[] = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Today' },
   { href: '/dashboard/residents', icon: Users, label: 'Residents' },
   { href: '/dashboard/staff', icon: UserCog, label: 'Staff' },
+  { href: '/dashboard/tasks', icon: ClipboardList, label: 'Tasks', roles: ['admin', 'manager'] },
   { href: '/dashboard/reports', icon: FileBarChart, label: 'Reports' },
   { href: '/dashboard/settings', icon: Settings, label: 'Settings' },
 ]
@@ -36,7 +46,9 @@ export default async function DashboardLayout({
   children: React.ReactNode
 }) {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
 
   if (!user) {
     redirect('/login')
@@ -44,7 +56,7 @@ export default async function DashboardLayout({
 
   const { data: profile } = await supabase
     .from('users')
-    .select('full_name, email, organisation_id')
+    .select('full_name, email, organisation_id, role')
     .eq('id', user.id)
     .maybeSingle()
 
@@ -55,6 +67,9 @@ export default async function DashboardLayout({
         .eq('id', profile.organisation_id)
         .maybeSingle()
     : { data: null }
+
+  const role = profile?.role as UserRole | undefined
+  const visibleNavItems = navItems.filter((item) => !item.roles || (role && item.roles.includes(role)))
 
   const workspaceLabel = typeof organisation?.settings === 'object' && organisation?.settings && !Array.isArray(organisation.settings)
     ? ((organisation.settings as Record<string, any>).branding?.workspaceLabel as string | undefined)
@@ -81,7 +96,7 @@ export default async function DashboardLayout({
         </div>
 
         <nav className="flex-1 space-y-1 p-4">
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <NavLink key={item.href} href={item.href} icon={item.icon}>
               {item.label}
             </NavLink>
@@ -138,7 +153,7 @@ export default async function DashboardLayout({
 
       <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-surface-200 bg-white safe-area-inset-bottom md:hidden">
         <div className="flex h-16 items-center justify-around">
-          {navItems.slice(0, 5).map((item) => (
+          {visibleNavItems.slice(0, 5).map((item) => (
             <Link
               key={item.href}
               href={item.href}

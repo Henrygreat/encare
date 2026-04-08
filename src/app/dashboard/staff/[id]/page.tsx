@@ -4,13 +4,14 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, ArrowRight, CheckCircle2, Clock3, Mail, Phone, ShieldCheck, Users } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { useAuth } from '@/lib/hooks'
+import { useAuth, useRequireManager } from '@/lib/hooks'
+import { useToast } from '@/components/providers/toast-provider'
 import { MobileHeader, PageContainer } from '@/components/layout/mobile-header'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Avatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
-import type { IncidentSeverity, Json, TaskStatus, User } from '@/lib/database.types'
+import type { IncidentSeverity, TaskStatus, User } from '@/lib/database.types'
 
 type StaffAssignmentWithResident = {
   id: string
@@ -71,13 +72,16 @@ function formatDateTime(date: string | null) {
 }
 
 export default function DashboardStaffDetailPage({ params }: { params: { id: string } }) {
-  const { user: authUser } = useAuth()
+  const { user: authUser, organisation, isLoading: authLoading } = useAuth()
+  const { isManager, isLoading: managerLoading } = useRequireManager('/dashboard')
+  const { showToast } = useToast()
   const [staff, setStaff] = useState<User | null>(null)
   const [assignments, setAssignments] = useState<StaffAssignmentWithResident[]>([])
   const [tasks, setTasks] = useState<TaskSummary[]>([])
   const [logs, setLogs] = useState<LogSummary[]>([])
   const [incidents, setIncidents] = useState<IncidentSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isDeactivating, setIsDeactivating] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -140,8 +144,32 @@ export default function DashboardStaffDetailPage({ params }: { params: { id: str
       }
     }
 
-    fetchStaffDetail()
-  }, [authUser?.organisation_id, params.id])
+    if (!authLoading) {
+      void fetchStaffDetail()
+    }
+  }, [authLoading, authUser?.organisation_id, params.id])
+
+  const handleDeactivate = async () => {
+    if (!organisation?.id || !staff) return
+    if (!window.confirm(`Deactivate ${staff.full_name}?`)) return
+
+    setIsDeactivating(true)
+    const { error: updateError } = await createClient()
+      .from('users')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq('id', staff.id)
+      .eq('organisation_id', organisation.id)
+
+    if (updateError) {
+      showToast({ title: 'Unable to deactivate staff member', description: updateError.message, variant: 'error' })
+      setIsDeactivating(false)
+      return
+    }
+
+    setStaff({ ...staff, is_active: false })
+    showToast({ title: 'Staff member deactivated', variant: 'success' })
+    setIsDeactivating(false)
+  }
 
   const metrics = useMemo(() => ({
     assignedResidents: assignments.length,
@@ -150,8 +178,12 @@ export default function DashboardStaffDetailPage({ params }: { params: { id: str
     incidentsHandled: incidents.length,
   }), [assignments.length, incidents, tasks])
 
-  if (isLoading) {
+  if (authLoading || managerLoading || isLoading) {
     return <PageContainer header={<MobileHeader title="Staff" backHref="/dashboard/staff" />}><Card padding="lg"><p className="text-center text-slate-500">Loading staff member…</p></Card></PageContainer>
+  }
+
+  if (!isManager) {
+    return <PageContainer header={<MobileHeader title="Staff" backHref="/dashboard/staff" />}><Card padding="lg"><p className="text-center text-slate-500">You do not have permission to manage staff.</p></Card></PageContainer>
   }
 
   if (error) {
@@ -167,19 +199,25 @@ export default function DashboardStaffDetailPage({ params }: { params: { id: str
       <div className="space-y-4">
         <Card className="border-white/70 bg-gradient-to-br from-white via-white to-sky-50 shadow-xl" padding="lg">
           <CardContent>
-            <div className="flex items-center gap-4">
-              <Avatar name={staff.full_name} src={staff.avatar_url} size="lg" />
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-2xl font-bold text-gray-900">{staff.full_name}</p>
-                  <Chip variant={staff.is_active ? 'success' : 'default'} size="sm">{staff.is_active ? 'Active' : 'Inactive'}</Chip>
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div className="flex items-center gap-4">
+                <Avatar name={staff.full_name} src={staff.avatar_url} size="lg" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-2xl font-bold text-gray-900">{staff.full_name}</p>
+                    <Chip variant={staff.is_active ? 'success' : 'default'} size="sm">{staff.is_active ? 'Active' : 'Inactive'}</Chip>
+                  </div>
+                  <p className="text-sm capitalize text-gray-600">{staff.role.replace('_', ' ')}</p>
+                  <div className="mt-2 space-y-1 text-sm text-slate-500">
+                    <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5" />{staff.email}</div>
+                    {staff.phone ? <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5" />{staff.phone}</div> : null}
+                    <div className="flex items-center gap-2"><Clock3 className="h-3.5 w-3.5" />Last active {formatRelative(staff.last_login_at)}</div>
+                  </div>
                 </div>
-                <p className="text-sm capitalize text-gray-600">{staff.role.replace('_', ' ')}</p>
-                <div className="mt-2 space-y-1 text-sm text-slate-500">
-                  <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5" />{staff.email}</div>
-                  {staff.phone ? <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5" />{staff.phone}</div> : null}
-                  <div className="flex items-center gap-2"><Clock3 className="h-3.5 w-3.5" />Last active {formatRelative(staff.last_login_at)}</div>
-                </div>
+              </div>
+              <div className="flex gap-2">
+                <Link href={`/dashboard/staff/${staff.id}/edit`}><Button variant="outline">Edit</Button></Link>
+                <Button variant="danger" isLoading={isDeactivating} onClick={() => void handleDeactivate()}>Deactivate</Button>
               </div>
             </div>
           </CardContent>
@@ -203,22 +241,22 @@ export default function DashboardStaffDetailPage({ params }: { params: { id: str
           <Card padding="md">
             <CardHeader><CardTitle>Recent task activity</CardTitle></CardHeader>
             <CardContent>
-              {tasks.length === 0 ? <p className="text-sm text-slate-500">No assigned tasks found.</p> : <div className="space-y-3">{tasks.map((task) => <div key={task.id} className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3"><div className="flex items-start justify-between gap-3"><div><p className="font-medium text-slate-900">{task.title}</p><p className="text-sm text-slate-500">{displayResidentName(task.residents)} · due {formatDateTime(task.due_at)}</p></div><Chip size="sm" variant={task.status === 'completed' ? 'success' : task.status === 'escalated' ? 'danger' : 'default'}>{task.status.replace('_', ' ')}</Chip></div></div>)}</div>}
+              {tasks.length === 0 ? <p className="text-sm text-slate-500">No assigned tasks found.</p> : <div className="space-y-3">{tasks.map((task) => <div key={task.id} className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3"><div className="flex items-center justify-between gap-3"><div><p className="font-medium text-slate-900">{task.title}</p><p className="text-sm text-slate-500">{displayResidentName(task.residents)} · Due {formatDateTime(task.due_at)}</p></div><Chip size="sm">{task.status}</Chip></div></div>)}</div>}
             </CardContent>
           </Card>
 
           <Card padding="md">
             <CardHeader><CardTitle>Recent logs</CardTitle></CardHeader>
             <CardContent>
-              {logs.length === 0 ? <p className="text-sm text-slate-500">No recent logs were captured by this staff member.</p> : <div className="space-y-3">{logs.map((log) => <div key={log.id} className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3"><p className="font-medium capitalize text-slate-900">{log.log_type.replace('_', ' ')}</p><p className="text-sm text-slate-500">{displayResidentName(log.residents)} · {formatDateTime(log.logged_at)}</p>{log.notes ? <p className="mt-2 text-sm text-slate-700">{log.notes}</p> : null}</div>)}</div>}
+              {logs.length === 0 ? <p className="text-sm text-slate-500">No recent logs found.</p> : <div className="space-y-3">{logs.map((log) => <div key={log.id} className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3"><p className="font-medium capitalize text-slate-900">{log.log_type.replace('_', ' ')}</p><p className="text-sm text-slate-500">{displayResidentName(log.residents)} · {formatDateTime(log.logged_at)}</p>{log.notes ? <p className="mt-2 text-sm text-slate-600">{log.notes}</p> : null}</div>)}</div>}
             </CardContent>
           </Card>
         </div>
 
         <Card padding="md">
-          <CardHeader><CardTitle>Incident involvement</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Incidents</CardTitle></CardHeader>
           <CardContent>
-            {incidents.length === 0 ? <p className="text-sm text-slate-500">No incident involvement has been recorded for this staff member.</p> : <div className="space-y-3">{incidents.map((incident) => <Link key={incident.id} href={`/dashboard/incidents/${incident.id}`} className="block rounded-2xl border border-slate-100 bg-slate-50/80 p-3 transition hover:border-slate-200 hover:bg-white"><div className="flex items-center justify-between gap-3"><div><p className="font-medium text-slate-900">{incident.incident_type}</p><p className="text-sm text-slate-500">{displayResidentName(incident.residents)} · {formatDateTime(incident.occurred_at)}</p></div><Chip size="sm" variant={incident.severity === 'critical' || incident.severity === 'high' ? 'danger' : incident.severity === 'medium' ? 'warning' : 'default'}>{incident.severity}</Chip></div></Link>)}</div>}
+            {incidents.length === 0 ? <p className="text-sm text-slate-500">No recent incidents handled.</p> : <div className="space-y-3">{incidents.map((incident) => <div key={incident.id} className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3"><div className="flex items-center justify-between gap-3"><div><p className="font-medium text-slate-900">{incident.incident_type}</p><p className="text-sm text-slate-500">{displayResidentName(incident.residents)} · {formatDateTime(incident.occurred_at)}</p></div><Chip size="sm" variant={incident.severity === 'critical' || incident.severity === 'high' ? 'danger' : 'warning'}>{incident.severity}</Chip></div></div>)}</div>}
           </CardContent>
         </Card>
       </div>
@@ -227,5 +265,5 @@ export default function DashboardStaffDetailPage({ params }: { params: { id: str
 }
 
 function MetricCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
-  return <Card padding="md"><div className="flex items-center gap-3 text-primary-600">{icon}<span className="text-sm font-medium text-slate-600">{label}</span></div><p className="mt-3 text-3xl font-semibold text-slate-900">{value}</p></Card>
+  return <Card className="border-white/70 bg-white/90 shadow-lg shadow-slate-200/60" padding="md"><div className="flex items-center justify-between gap-3"><div><p className="text-sm font-medium text-slate-500">{label}</p><p className="mt-2 text-2xl font-semibold text-slate-900">{value}</p></div><div className="rounded-full bg-slate-100 p-2 text-slate-700">{icon}</div></div></Card>
 }

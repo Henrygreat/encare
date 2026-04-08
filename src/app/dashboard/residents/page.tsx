@@ -2,40 +2,46 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Filter, Plus, Search, Sparkles, Users, ChevronRight } from 'lucide-react'
+import { ChevronRight, Filter, Plus, Search, Sparkles, Users } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Avatar } from '@/components/ui/avatar'
 import { Chip } from '@/components/ui/chip'
 import { createClient } from '@/lib/supabase/client'
-import { useAuth } from '@/lib/hooks/use-auth'
+import { useAuth, useRequireManager } from '@/lib/hooks/use-auth'
+import { useToast } from '@/components/providers/toast-provider'
 import { formatRelativeTime } from '@/lib/utils'
-import type { Resident } from '@/lib/database.types'
+import type { Json, Resident } from '@/lib/database.types'
 
 type ResidentRow = Resident & {
   assignedStaffCount: number
   lastLogAt: string | null
-  riskLevel: 'high' | 'medium' | 'low'
+  riskLevel: 'low' | 'medium' | 'high'
   overdueTasks: number
   logCount7Days: number
 }
 
-function getRiskLevel(riskFlags: Resident['risk_flags']): ResidentRow['riskLevel'] {
-  const flags = Array.isArray(riskFlags) ? riskFlags : []
-  if (flags.some((flag: any) => flag?.level === 'high')) return 'high'
-  if (flags.some((flag: any) => flag?.level === 'medium')) return 'medium'
+function getRiskLevel(riskFlags: Json): 'low' | 'medium' | 'high' {
+  if (!Array.isArray(riskFlags) || riskFlags.length === 0) return 'low'
+  const hasHigh = riskFlags.some((flag: any) => flag?.severity === 'high' || flag?.priority === 'high')
+  if (hasHigh) return 'high'
+  if (riskFlags.length >= 2) return 'medium'
   return 'low'
 }
 
 export default function ResidentsManagementPage() {
   const { organisation, isLoading: authLoading } = useAuth()
+  const { isManager, isLoading: managerLoading } = useRequireManager('/dashboard')
+  const { showToast } = useToast()
+
   const [residents, setResidents] = useState<ResidentRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
   const [riskFilter, setRiskFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all')
+  const [archivingId, setArchivingId] = useState<string | null>(null)
 
   useEffect(() => {
     async function loadResidents() {
@@ -44,13 +50,12 @@ export default function ResidentsManagementPage() {
       setError(null)
       try {
         const supabase = createClient()
-        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-        const today = new Date().toISOString().split('T')[0]
+        const startOfWindow = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
         const nowIso = new Date().toISOString()
         const [residentsResult, logsResult, assignmentsResult, overdueTasksResult] = await Promise.all([
-          supabase.from('residents').select('*').eq('organisation_id', organisation.id).order('first_name'),
-          supabase.from('daily_logs').select('resident_id, logged_at').eq('organisation_id', organisation.id).gte('logged_at', sevenDaysAgo).order('logged_at', { ascending: false }),
-          supabase.from('staff_assignments').select('resident_id, user_id').eq('shift_date', today),
+          supabase.from('residents').select('*').eq('organisation_id', organisation.id).order('last_name'),
+          supabase.from('daily_logs').select('resident_id, logged_at').eq('organisation_id', organisation.id).gte('logged_at', startOfWindow),
+          supabase.from('staff_assignments').select('resident_id, user_id').gte('shift_date', new Date().toISOString().split('T')[0]),
           supabase.from('tasks').select('resident_id').eq('organisation_id', organisation.id).eq('status', 'pending').lt('due_at', nowIso),
         ])
         if (residentsResult.error) throw residentsResult.error
@@ -92,6 +97,31 @@ export default function ResidentsManagementPage() {
     if (!authLoading) void loadResidents()
   }, [authLoading, organisation?.id])
 
+  const handleArchive = async (residentId: string) => {
+    if (!organisation?.id) return
+    if (!window.confirm('Archive this resident? Their record will remain available but marked inactive.')) return
+
+    const previousResidents = residents
+    setArchivingId(residentId)
+    setResidents((current) => current.map((resident) => resident.id === residentId ? { ...resident, status: 'inactive' } : resident))
+
+    const { error: updateError } = await createClient()
+      .from('residents')
+      .update({ status: 'inactive', updated_at: new Date().toISOString() })
+      .eq('id', residentId)
+      .eq('organisation_id', organisation.id)
+
+    if (updateError) {
+      setResidents(previousResidents)
+      showToast({ title: 'Unable to archive resident', description: updateError.message, variant: 'error' })
+      setArchivingId(null)
+      return
+    }
+
+    showToast({ title: 'Resident archived', variant: 'success' })
+    setArchivingId(null)
+  }
+
   const filteredResidents = useMemo(() => {
     let list = [...residents]
     if (searchQuery) {
@@ -109,6 +139,14 @@ export default function ResidentsManagementPage() {
     highRisk: residents.filter((resident) => resident.riskLevel === 'high').length,
     overdue: residents.filter((resident) => resident.overdueTasks > 0).length,
   }), [residents])
+
+  if (authLoading || managerLoading) {
+    return <Card padding="lg"><p className="text-center text-slate-500">Loading residents workspace…</p></Card>
+  }
+
+  if (!isManager) {
+    return <Card padding="lg"><p className="text-center text-slate-500">You do not have permission to manage residents.</p></Card>
+  }
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -141,7 +179,7 @@ export default function ResidentsManagementPage() {
         <div className="grid gap-4 lg:grid-cols-2">
           {filteredResidents.map((resident) => {
             const displayName = `${resident.preferred_name || resident.first_name} ${resident.last_name}`
-            return <Link key={resident.id} href={`/dashboard/residents/${resident.id}`}><Card className="group h-full border-white/70 bg-white/85 shadow-lg shadow-slate-200/70 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-primary-100/80" padding="lg"><div className="flex items-start justify-between gap-4"><div className="flex min-w-0 items-start gap-4"><Avatar src={resident.photo_url} name={displayName} size="lg" /><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate text-lg font-semibold text-slate-900">{displayName}</h2><Chip size="sm" variant={resident.riskLevel === 'high' ? 'danger' : resident.riskLevel === 'medium' ? 'warning' : 'default'}>{resident.riskLevel} risk</Chip>{resident.status !== 'active' ? <Chip size="sm">{resident.status}</Chip> : null}</div><p className="mt-1 text-sm text-slate-500">Room {resident.room_number || 'Unassigned'} · {resident.assignedStaffCount} staff assigned today</p><div className="mt-3 flex flex-wrap gap-2"><SoftBadge label={`${resident.logCount7Days} logs / 7 days`} /><SoftBadge label={resident.lastLogAt ? `Last log ${formatRelativeTime(resident.lastLogAt)}` : 'No recent logs'} />{resident.overdueTasks > 0 ? <SoftBadge label={`${resident.overdueTasks} overdue task${resident.overdueTasks > 1 ? 's' : ''}`} tone="danger" /> : <SoftBadge label="No overdue tasks" tone="success" />}</div>{(Array.isArray(resident.risk_flags) && resident.risk_flags.length > 0) ? <div className="mt-4 flex flex-wrap gap-2">{resident.risk_flags.slice(0, 3).map((flag: any, index: number) => <span key={`${resident.id}-${index}`} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">{flag?.type || 'Risk flag'}</span>)}</div> : null}</div></div><ChevronRight className="mt-1 h-5 w-5 shrink-0 text-slate-300 transition-transform group-hover:translate-x-1 group-hover:text-primary-500" /></div></Card></Link>
+            return <Card key={resident.id} className="group h-full border-white/70 bg-white/85 shadow-lg shadow-slate-200/70 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-primary-100/80" padding="lg"><div className="flex items-start justify-between gap-4"><Link href={`/dashboard/residents/${resident.id}`} className="flex min-w-0 flex-1 items-start gap-4"><Avatar src={resident.photo_url} name={displayName} size="lg" /><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate text-lg font-semibold text-slate-900">{displayName}</h2><Chip size="sm" variant={resident.riskLevel === 'high' ? 'danger' : resident.riskLevel === 'medium' ? 'warning' : 'default'}>{resident.riskLevel} risk</Chip>{resident.status !== 'active' ? <Chip size="sm">{resident.status}</Chip> : null}</div><p className="mt-1 text-sm text-slate-500">Room {resident.room_number || 'Unassigned'} · {resident.assignedStaffCount} staff assigned today</p><div className="mt-3 flex flex-wrap gap-2"><SoftBadge label={`${resident.logCount7Days} logs / 7 days`} /><SoftBadge label={resident.lastLogAt ? `Last log ${formatRelativeTime(resident.lastLogAt)}` : 'No recent logs'} />{resident.overdueTasks > 0 ? <SoftBadge label={`${resident.overdueTasks} overdue task${resident.overdueTasks > 1 ? 's' : ''}`} tone="danger" /> : <SoftBadge label="No overdue tasks" tone="success" />}</div>{(Array.isArray(resident.risk_flags) && resident.risk_flags.length > 0) ? <div className="mt-4 flex flex-wrap gap-2">{resident.risk_flags.slice(0, 3).map((flag: any, index: number) => <span key={`${resident.id}-${index}`} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">{flag?.type || 'Risk flag'}</span>)}</div> : null}</div></Link><div className="flex shrink-0 flex-col gap-2"><Link href={`/dashboard/residents/${resident.id}/edit`}><Button variant="outline" size="sm">Edit</Button></Link><Button variant="danger" size="sm" isLoading={archivingId === resident.id} onClick={() => void handleArchive(resident.id)}>Archive</Button><ChevronRight className="mx-auto mt-1 h-5 w-5 text-slate-300 transition-transform group-hover:translate-x-1 group-hover:text-primary-500" /></div></div></Card>
           })}
         </div>
       )}
