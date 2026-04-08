@@ -1,11 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Target,
-  Shield,
   Heart,
   Check,
   ChevronDown,
@@ -14,14 +12,44 @@ import {
   User,
 } from "lucide-react";
 import { MobileHeader, PageContainer } from "@/components/layout/mobile-header";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { formatDate } from "@/lib/utils";
 import { useCarePlan, useMarkCarePlanViewed } from "@/lib/hooks";
 
+type KeyNeed = {
+  category?: string;
+  description?: string;
+};
+
+type KeyRisk = {
+  type?: string;
+  level?: string;
+  description?: string;
+  mitigation?: string;
+};
+
+type Goal = {
+  description?: string;
+  status?: string;
+  target_date?: string | null;
+};
+
+function safeFormatDate(value?: string | null, fallback = "Not set") {
+  if (!value) return fallback;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return fallback;
+
+  return formatDate(value);
+}
+
+function asArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
 export default function CarePlanPage({ params }: { params: { id: string } }) {
-  const router = useRouter();
   const [expandedSections, setExpandedSections] = useState<string[]>([
     "risks",
     "needs",
@@ -32,10 +60,11 @@ export default function CarePlanPage({ params }: { params: { id: string } }) {
   const { carePlan, isLoading, error } = useCarePlan(params.id);
   const { markAsViewed: recordView } = useMarkCarePlanViewed();
 
-  // Update local viewed state if already viewed in DB
   useEffect(() => {
     if (carePlan?.has_viewed) {
       setMarkedAsViewed(true);
+    } else {
+      setMarkedAsViewed(false);
     }
   }, [carePlan?.has_viewed]);
 
@@ -77,21 +106,9 @@ export default function CarePlanPage({ params }: { params: { id: string } }) {
     );
   }
 
-  const keyNeeds = carePlan.key_needs as Array<{
-    category: string;
-    description: string;
-  }>;
-  const keyRisks = carePlan.key_risks as Array<{
-    type: string;
-    level: string;
-    description: string;
-    mitigation: string;
-  }>;
-  const goals = carePlan.goals as Array<{
-    description: string;
-    status: string;
-    target_date: string;
-  }>;
+  const keyNeeds = asArray<KeyNeed>((carePlan as any).key_needs);
+  const keyRisks = asArray<KeyRisk>((carePlan as any).key_risks);
+  const goals = asArray<Goal>((carePlan as any).goals);
 
   const toggleSection = (section: string) => {
     setExpandedSections((prev) =>
@@ -110,6 +127,12 @@ export default function CarePlanPage({ params }: { params: { id: string } }) {
     setIsMarkingViewed(false);
   };
 
+  const summary =
+    (carePlan as any).summary || "No care plan summary has been added yet.";
+
+  const reviewDate = safeFormatDate((carePlan as any).review_date);
+  const lastReviewedAt = safeFormatDate((carePlan as any).last_reviewed_at);
+
   return (
     <PageContainer
       header={
@@ -121,26 +144,22 @@ export default function CarePlanPage({ params }: { params: { id: string } }) {
         />
       }
     >
-      {/* Summary */}
       <Card className="mb-4" padding="md">
         <CardContent>
-          <p className="text-gray-700">{carePlan.summary}</p>
-          <div className="flex items-center gap-4 mt-4 pt-4 border-t border-surface-100 text-sm text-gray-500">
+          <p className="text-gray-700">{summary}</p>
+          <div className="mt-4 flex items-center gap-4 border-t border-surface-100 pt-4 text-sm text-gray-500">
             <div className="flex items-center gap-1">
               <Calendar className="h-4 w-4" />
-              <span>Review: {formatDate(carePlan.review_date!)}</span>
+              <span>Review: {reviewDate}</span>
             </div>
             <div className="flex items-center gap-1">
               <User className="h-4 w-4" />
-              <span>
-                Last reviewed: {formatDate(carePlan.last_reviewed_at!)}
-              </span>
+              <span>Last reviewed: {lastReviewedAt}</span>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Key Risks */}
       <CollapsibleSection
         title="Key Risks"
         icon={<AlertTriangle className="h-5 w-5 text-care-red" />}
@@ -152,75 +171,100 @@ export default function CarePlanPage({ params }: { params: { id: string } }) {
           </Chip>
         }
       >
-        <div className="space-y-3">
-          {keyRisks.map((risk, idx) => (
-            <div key={idx} className="p-3 bg-surface-50 rounded-button">
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-medium text-gray-900">{risk.type}</span>
-                <Chip
-                  variant={risk.level === "high" ? "danger" : "warning"}
-                  size="sm"
-                >
-                  {risk.level}
-                </Chip>
-              </div>
-              <p className="text-sm text-gray-600 mb-2">{risk.description}</p>
-              <div className="text-sm">
-                <span className="text-gray-500">Mitigation: </span>
-                <span className="text-gray-700">{risk.mitigation}</span>
-              </div>
-            </div>
-          ))}
-        </div>
+        {keyRisks.length > 0 ? (
+          <div className="space-y-3">
+            {keyRisks.map((risk, idx) => {
+              const riskLevel = String(risk.level || "").toLowerCase();
+              return (
+                <div key={idx} className="rounded-button bg-surface-50 p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="font-medium text-gray-900">
+                      {risk.type || "Risk"}
+                    </span>
+                    <Chip
+                      variant={riskLevel === "high" ? "danger" : "warning"}
+                      size="sm"
+                    >
+                      {risk.level || "Unknown"}
+                    </Chip>
+                  </div>
+                  <p className="mb-2 text-sm text-gray-600">
+                    {risk.description || "No description added."}
+                  </p>
+                  <div className="text-sm">
+                    <span className="text-gray-500">Mitigation: </span>
+                    <span className="text-gray-700">
+                      {risk.mitigation || "No mitigation recorded."}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">No key risks recorded.</p>
+        )}
       </CollapsibleSection>
 
-      {/* Key Needs */}
       <CollapsibleSection
         title="Key Needs"
         icon={<Heart className="h-5 w-5 text-pink-500" />}
         expanded={expandedSections.includes("needs")}
         onToggle={() => toggleSection("needs")}
       >
-        <div className="space-y-3">
-          {keyNeeds.map((need, idx) => (
-            <div key={idx} className="p-3 bg-surface-50 rounded-button">
-              <span className="font-medium text-gray-900 block mb-1">
-                {need.category}
-              </span>
-              <p className="text-sm text-gray-600">{need.description}</p>
-            </div>
-          ))}
-        </div>
+        {keyNeeds.length > 0 ? (
+          <div className="space-y-3">
+            {keyNeeds.map((need, idx) => (
+              <div key={idx} className="rounded-button bg-surface-50 p-3">
+                <span className="mb-1 block font-medium text-gray-900">
+                  {need.category || "Need"}
+                </span>
+                <p className="text-sm text-gray-600">
+                  {need.description || "No description added."}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">No key needs recorded.</p>
+        )}
       </CollapsibleSection>
 
-      {/* Goals */}
       <CollapsibleSection
         title="Goals"
         icon={<Target className="h-5 w-5 text-primary-500" />}
         expanded={expandedSections.includes("goals")}
         onToggle={() => toggleSection("goals")}
       >
-        <div className="space-y-3">
-          {goals.map((goal, idx) => (
-            <div key={idx} className="p-3 bg-surface-50 rounded-button">
-              <div className="flex items-start justify-between gap-3">
-                <p className="text-gray-700 flex-1">{goal.description}</p>
-                <Chip
-                  variant={goal.status === "on_track" ? "success" : "warning"}
-                  size="sm"
-                >
-                  {goal.status === "on_track" ? "On track" : "Attention"}
-                </Chip>
-              </div>
-              <p className="text-xs text-gray-500 mt-2">
-                Target: {formatDate(goal.target_date)}
-              </p>
-            </div>
-          ))}
-        </div>
+        {goals.length > 0 ? (
+          <div className="space-y-3">
+            {goals.map((goal, idx) => {
+              const status = String(goal.status || "").toLowerCase();
+              return (
+                <div key={idx} className="rounded-button bg-surface-50 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="flex-1 text-gray-700">
+                      {goal.description || "No goal description added."}
+                    </p>
+                    <Chip
+                      variant={status === "on_track" ? "success" : "warning"}
+                      size="sm"
+                    >
+                      {status === "on_track" ? "On track" : "Attention"}
+                    </Chip>
+                  </div>
+                  <p className="mt-2 text-xs text-gray-500">
+                    Target: {safeFormatDate(goal.target_date)}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">No goals recorded.</p>
+        )}
       </CollapsibleSection>
 
-      {/* Mark as Viewed */}
       <div className="mt-6">
         <Button
           fullWidth
@@ -232,17 +276,17 @@ export default function CarePlanPage({ params }: { params: { id: string } }) {
         >
           {markedAsViewed ? (
             <>
-              <Check className="h-5 w-5 mr-2" />
+              <Check className="mr-2 h-5 w-5" />
               Marked as Viewed
             </>
           ) : (
             <>
-              <Check className="h-5 w-5 mr-2" />
+              <Check className="mr-2 h-5 w-5" />
               Mark as Viewed
             </>
           )}
         </Button>
-        <p className="text-center text-xs text-gray-500 mt-2">
+        <p className="mt-2 text-center text-xs text-gray-500">
           This confirms you have read and understood this care plan
         </p>
       </div>
@@ -269,7 +313,7 @@ function CollapsibleSection({
     <Card className="mb-4" padding="none">
       <button
         onClick={onToggle}
-        className="w-full flex items-center justify-between p-4"
+        className="flex w-full items-center justify-between p-4"
       >
         <div className="flex items-center gap-3">
           {icon}
@@ -283,7 +327,7 @@ function CollapsibleSection({
         )}
       </button>
       {expanded && (
-        <div className="px-4 pb-4 border-t border-surface-100 pt-4">
+        <div className="border-t border-surface-100 px-4 pb-4 pt-4">
           {children}
         </div>
       )}
