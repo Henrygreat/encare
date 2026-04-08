@@ -10,25 +10,86 @@ export type HandoverWithSummary = HandoverNote & {
   read_by_list?: Array<{ user_id: string; name: string; read_at: string }>
 }
 
+function getTodayDateString() {
+  return new Date().toISOString().split('T')[0]
+}
+
+function getDefaultShiftType() {
+  const hour = new Date().getHours()
+
+  if (hour < 12) return 'morning'
+  if (hour < 18) return 'day'
+  return 'night'
+}
+
+function buildDefaultAutoSummary() {
+  return {
+    total_logs: 0,
+    residents_logged: 0,
+    tasks_completed: 0,
+    tasks_pending: 0,
+    incidents: 0,
+  }
+}
+
+async function enrichHandover(
+  supabase: ReturnType<typeof createClient>,
+  handoverData: any
+): Promise<HandoverWithSummary> {
+  const readByData = (handoverData.read_by as any[] | null) || []
+  let readByList: Array<{ user_id: string; name: string; read_at: string }> = []
+
+  if (readByData.length > 0) {
+    const { data: userData } = await supabase
+      .from('users')
+      .select('id, full_name')
+      .in(
+        'id',
+        readByData.map((r: any) => r.user_id || r)
+      )
+
+    readByList = (userData || []).map((u: any) => ({
+      user_id: u.id,
+      name: u.full_name,
+      read_at:
+        readByData.find((r: any) => (r.user_id || r) === u.id)?.read_at ||
+        new Date().toISOString(),
+    }))
+  }
+
+  const createdByUser = Array.isArray(handoverData.users)
+    ? handoverData.users[0]
+    : handoverData.users
+
+  return {
+    ...handoverData,
+    created_by_name: createdByUser?.full_name,
+    read_by_list: readByList,
+  }
+}
+
 export function useTodayHandover() {
   const [handover, setHandover] = useState<HandoverWithSummary | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
-  const { user, organisation } = useAuthStore()
+  const { user } = useAuthStore()
 
   useEffect(() => {
-    async function fetchHandover() {
-      if (!user?.organisation_id) return
+    async function fetchOrCreateHandover() {
+      if (!user?.organisation_id || !user?.id) {
+        setHandover(null)
+        setIsLoading(false)
+        return
+      }
 
       setIsLoading(true)
       setError(null)
 
       try {
         const supabase = createClient()
-        const today = new Date().toISOString().split('T')[0]
+        const today = getTodayDateString()
 
-        // Fetch today's handover note
-        const { data: handoverData, error: handoverError } = await supabase
+        const { data: existingHandover, error: handoverError } = await supabase
           .from('handover_notes')
           .select(`
             *,
@@ -42,47 +103,47 @@ export function useTodayHandover() {
 
         if (handoverError) throw handoverError
 
-        if (handoverData) {
-          // Fetch who has read this handover
-          const readByData = handoverData.read_by as any[] | null || []
-
-          let readByList: Array<{ user_id: string; name: string; read_at: string }> = []
-
-          if (readByData && readByData.length > 0) {
-            // Fetch user details for those who read it
-            const { data: userData } = await supabase
-              .from('users')
-              .select('id, full_name')
-              .in('id', readByData.map((r: any) => r.user_id || r))
-
-            readByList = (userData || []).map((u: any) => ({
-              user_id: u.id,
-              name: u.full_name,
-              read_at: readByData.find((r: any) => (r.user_id || r) === u.id)?.read_at || new Date().toISOString(),
-            }))
-          }
-
-          const createdByUser = Array.isArray(handoverData.users)
-            ? handoverData.users[0]
-            : handoverData.users
-
-          setHandover({
-            ...handoverData,
-            created_by_name: createdByUser?.full_name,
-            read_by_list: readByList,
-          })
-        } else {
-          setHandover(null)
+        if (existingHandover) {
+          const enriched = await enrichHandover(supabase, existingHandover)
+          setHandover(enriched)
+          return
         }
+
+        const newHandoverPayload = {
+          organisation_id: user.organisation_id,
+          shift_date: today,
+          shift_type: getDefaultShiftType(),
+          auto_summary: buildDefaultAutoSummary(),
+          priority_items: [],
+          manual_notes: '',
+          read_by: [],
+          created_by: user.id,
+        }
+
+        const { data: createdHandover, error: createError } = await supabase
+          .from('handover_notes')
+          .insert(newHandoverPayload)
+          .select(`
+            *,
+            users!created_by (full_name)
+          `)
+          .single()
+
+        if (createError) throw createError
+
+        const enriched = await enrichHandover(supabase, createdHandover)
+        setHandover(enriched)
       } catch (err) {
+        console.error('Failed to fetch or create handover:', err)
         setError(err instanceof Error ? err : new Error('Failed to fetch handover'))
+        setHandover(null)
       } finally {
         setIsLoading(false)
       }
     }
 
-    fetchHandover()
-  }, [user?.organisation_id])
+    void fetchOrCreateHandover()
+  }, [user?.organisation_id, user?.id])
 
   return { handover, isLoading, error }
 }
@@ -95,16 +156,19 @@ export function usePreviousHandovers() {
 
   useEffect(() => {
     async function fetchHandovers() {
-      if (!user?.organisation_id) return
+      if (!user?.organisation_id) {
+        setHandovers([])
+        setIsLoading(false)
+        return
+      }
 
       setIsLoading(true)
       setError(null)
 
       try {
         const supabase = createClient()
-        const today = new Date().toISOString().split('T')[0]
+        const today = getTodayDateString()
 
-        // Fetch previous handovers (excluding today's)
         const { data: handoverData, error: handoverError } = await supabase
           .from('handover_notes')
           .select(`
@@ -128,13 +192,14 @@ export function usePreviousHandovers() {
 
         setHandovers(enriched)
       } catch (err) {
+        console.error('Failed to fetch previous handovers:', err)
         setError(err instanceof Error ? err : new Error('Failed to fetch handovers'))
       } finally {
         setIsLoading(false)
       }
     }
 
-    fetchHandovers()
+    void fetchHandovers()
   }, [user?.organisation_id])
 
   return { handovers, isLoading, error }
@@ -145,7 +210,10 @@ export function useHandoverActions() {
   const { user } = useAuthStore()
 
   const updateManualNotes = useCallback(
-    async (handoverId: string, notes: string): Promise<{ success: boolean; error?: string }> => {
+    async (
+      handoverId: string,
+      notes: string
+    ): Promise<{ success: boolean; error?: string }> => {
       setIsLoading(true)
 
       try {
@@ -153,10 +221,14 @@ export function useHandoverActions() {
 
         const { error } = await supabase
           .from('handover_notes')
-          .update({ manual_notes: notes })
+          .update({
+            manual_notes: notes,
+            updated_at: new Date().toISOString(),
+          })
           .eq('id', handoverId)
 
         if (error) throw error
+
         return { success: true }
       } catch (err) {
         console.error('Failed to update handover notes:', err)
@@ -182,7 +254,6 @@ export function useHandoverActions() {
       try {
         const supabase = createClient()
 
-        // Get current handover
         const { data: handover, error: fetchError } = await supabase
           .from('handover_notes')
           .select('read_by')
@@ -191,10 +262,8 @@ export function useHandoverActions() {
 
         if (fetchError) throw fetchError
 
-        // Add current user to read_by
         const readBy = (handover?.read_by as any[] | null) || []
 
-        // Check if already read by this user
         const alreadyRead = readBy.some((r: any) => (r.user_id || r) === user.id)
 
         if (!alreadyRead) {
@@ -204,13 +273,16 @@ export function useHandoverActions() {
           })
         }
 
-        // Update handover with read_by
         const { error: updateError } = await supabase
           .from('handover_notes')
-          .update({ read_by: readBy })
+          .update({
+            read_by: readBy,
+            updated_at: new Date().toISOString(),
+          })
           .eq('id', handoverId)
 
         if (updateError) throw updateError
+
         return { success: true }
       } catch (err) {
         console.error('Failed to mark handover as read:', err)
