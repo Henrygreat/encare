@@ -1,15 +1,14 @@
-'use client'
+"use client";
 
-import { useEffect, useCallback, useRef } from 'react'
-import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
-import { useAuthStore } from '@/lib/stores/auth-store'
-import type { User, Organisation } from '@/lib/database.types'
+import { useEffect, useCallback } from "react";
+import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import { useAuthStore } from "@/lib/stores/auth-store";
+import type { User, Organisation } from "@/lib/database.types";
 
 export function useAuth() {
-  const router = useRouter()
-  const isInitializingRef = useRef(false)
+  const router = useRouter();
 
   const {
     user,
@@ -20,154 +19,152 @@ export function useAuth() {
     setOrganisation,
     setIsLoading,
     clear,
-  } = useAuthStore()
+  } = useAuthStore();
 
   const initializeAuth = useCallback(async () => {
-    if (isInitializingRef.current) return
-    isInitializingRef.current = true
-    setIsLoading(true)
+    setIsLoading(true);
 
     try {
-      const supabase = createClient()
+      const supabase = createClient();
+
       const {
         data: { session },
         error: sessionError,
-      } = await supabase.auth.getSession()
+      } = await supabase.auth.getSession();
 
       if (sessionError) {
-        console.error('Session error:', sessionError)
-        clear()
-        return
+        console.error("Session error:", sessionError);
+        clear();
+        return;
       }
 
       if (!session?.user) {
-        clear()
-        return
+        clear();
+        return;
       }
 
       const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', session.user.id)
-        .maybeSingle()
+        .from("users")
+        .select("*")
+        .eq("id", session.user.id)
+        .maybeSingle();
 
       if (userError) {
-        console.error('User profile lookup failed:', userError.message)
-        clear()
-        return
+        console.error("User profile lookup failed:", userError.message);
+        clear();
+        return;
       }
 
       if (!userData) {
-        console.error('No user profile found for authenticated session')
-        clear()
-        return
+        console.error("No user profile found for authenticated session");
+        clear();
+        return;
       }
 
-      setUser(userData as User)
+      setUser(userData as User);
 
       if (!userData.organisation_id) {
-        console.error('Authenticated user has no organisation_id')
-        setOrganisation(null as unknown as Organisation)
-        return
+        console.error("Authenticated user has no organisation_id");
+        setOrganisation(null as unknown as Organisation);
+        return;
       }
 
       const { data: orgData, error: orgError } = await supabase
-        .from('organisations')
-        .select('*')
-        .eq('id', userData.organisation_id)
-        .maybeSingle()
+        .from("organisations")
+        .select("*")
+        .eq("id", userData.organisation_id)
+        .maybeSingle();
 
       if (orgError) {
-        console.error('Organisation lookup failed:', orgError.message)
-        setOrganisation(null as unknown as Organisation)
-        return
+        console.error("Organisation lookup failed:", orgError.message);
+        setOrganisation(null as unknown as Organisation);
+        return;
       }
 
       if (!orgData) {
-        console.error('No organisation found for user', {
+        console.error("No organisation found for user", {
           userId: userData.id,
           organisationId: userData.organisation_id,
-        })
-        setOrganisation(null as unknown as Organisation)
-        return
+        });
+        setOrganisation(null as unknown as Organisation);
+        return;
       }
 
-      setOrganisation(orgData as Organisation)
+      setOrganisation(orgData as Organisation);
     } catch (err) {
-      console.error('Auth initialization error:', err)
-      clear()
+      console.error("Auth initialization error:", err);
+      clear();
     } finally {
-      setIsLoading(false)
-      isInitializingRef.current = false
+      setIsLoading(false);
     }
-  }, [setUser, setOrganisation, setIsLoading, clear])
+  }, [setUser, setOrganisation, setIsLoading, clear]);
 
   useEffect(() => {
-    const supabase = createClient()
+    const supabase = createClient();
 
-    void initializeAuth()
+    void initializeAuth();
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(
       (event: AuthChangeEvent, session: Session | null) => {
-        if (event === 'SIGNED_OUT') {
-          clear()
-          router.replace('/login')
-          return
+        if (event === "SIGNED_OUT") {
+          clear();
+          router.replace("/login");
+          return;
         }
 
         if (
-          event === 'SIGNED_IN' ||
-          event === 'TOKEN_REFRESHED' ||
-          event === 'USER_UPDATED'
+          event === "SIGNED_IN" ||
+          event === "TOKEN_REFRESHED" ||
+          event === "USER_UPDATED"
         ) {
           if (session?.user) {
-            void initializeAuth()
+            void initializeAuth();
           }
         }
       },
-    )
+    );
 
     return () => {
-      subscription.unsubscribe()
-    }
-  }, [initializeAuth, clear, router])
+      subscription.unsubscribe();
+    };
+  }, [initializeAuth, clear, router]);
 
   const signOut = useCallback(async () => {
     try {
-      const supabase = createClient()
-      await supabase.auth.signOut()
+      const supabase = createClient();
+      await supabase.auth.signOut();
     } catch (err) {
-      console.error('Sign out error:', err)
+      console.error("Sign out error:", err);
     } finally {
-      clear()
-      router.replace('/login')
+      clear();
+      router.replace("/login");
     }
-  }, [clear, router])
+  }, [clear, router]);
 
   const signIn = useCallback(
     async (email: string, password: string) => {
       try {
-        const supabase = createClient()
+        const supabase = createClient();
         const { error } = await supabase.auth.signInWithPassword({
           email,
           password,
-        })
+        });
 
         if (error) {
-          return { success: false, error: error.message }
+          return { success: false, error: error.message };
         }
 
-        await initializeAuth()
-        return { success: true }
+        await initializeAuth();
+        return { success: true };
       } catch (err) {
-        console.error('Sign in error:', err)
-        return { success: false, error: 'Unable to sign in right now.' }
+        console.error("Sign in error:", err);
+        return { success: false, error: "Unable to sign in right now." };
       }
     },
     [initializeAuth],
-  )
+  );
 
   return {
     user,
@@ -177,37 +174,37 @@ export function useAuth() {
     signIn,
     signOut,
     refreshAuth: initializeAuth,
-  }
+  };
 }
 
-export function useRequireAuth(redirectTo = '/login') {
-  const router = useRouter()
-  const { isAuthenticated, isLoading } = useAuthStore()
+export function useRequireAuth(redirectTo = "/login") {
+  const router = useRouter();
+  const { isAuthenticated, isLoading } = useAuthStore();
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      router.replace(redirectTo)
+      router.replace(redirectTo);
     }
-  }, [isAuthenticated, isLoading, router, redirectTo])
+  }, [isAuthenticated, isLoading, router, redirectTo]);
 
-  return { isAuthenticated, isLoading }
+  return { isAuthenticated, isLoading };
 }
 
-export function useRequireManager(redirectTo = '/app') {
-  const router = useRouter()
-  const { user, isLoading } = useAuthStore()
+export function useRequireManager(redirectTo = "/app") {
+  const router = useRouter();
+  const { user, isLoading } = useAuthStore();
 
   useEffect(() => {
     if (!isLoading && user) {
-      const isManager = user.role === 'admin' || user.role === 'manager'
+      const isManager = user.role === "admin" || user.role === "manager";
       if (!isManager) {
-        router.replace(redirectTo)
+        router.replace(redirectTo);
       }
     }
-  }, [user, isLoading, router, redirectTo])
+  }, [user, isLoading, router, redirectTo]);
 
   return {
-    isManager: user?.role === 'admin' || user?.role === 'manager',
+    isManager: user?.role === "admin" || user?.role === "manager",
     isLoading,
-  }
+  };
 }
