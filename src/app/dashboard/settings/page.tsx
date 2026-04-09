@@ -4,15 +4,14 @@ import { useEffect, useState } from "react";
 import {
   ArrowLeft,
   Building2,
-  Palette,
   Shield,
-  FileText,
+  Settings2,
   BarChart3,
   CheckCircle2,
+  CreditCard,
 } from "lucide-react";
 import Link from "next/link";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { BillingSettings } from "@/components/billing/billing-settings";
 import { useAuth } from "@/lib/hooks/use-auth";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { Button } from "@/components/ui/button";
@@ -31,12 +30,13 @@ export default function DashboardSettingsPage() {
   const { setOrganisation } = useAuthStore();
   const isAdmin = user?.role === "admin";
 
-  const [brandingName, setBrandingName] = useState("");
-  const [accentColor, setAccentColor] = useState("#0284c7");
   const [allowManagerEscalation, setAllowManagerEscalation] = useState(true);
   const [allowCarerIncidentClosure, setAllowCarerIncidentClosure] =
     useState(false);
+  const [defaultPriority, setDefaultPriority] = useState("normal");
   const [defaultTemplate, setDefaultTemplate] = useState("General care");
+  const [residentListView, setResidentListView] = useState("compact");
+  const [shiftHandoverReminders, setShiftHandoverReminders] = useState(true);
   const [showComplianceSummary, setShowComplianceSummary] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -44,22 +44,21 @@ export default function DashboardSettingsPage() {
 
   useEffect(() => {
     const settings = asObject(organisation?.settings);
-    const branding = asObject(settings.branding);
     const permissions = asObject(settings.permissions);
+    const workflow = asObject(settings.workflow);
     const templates = asObject(settings.templates);
     const reporting = asObject(settings.reporting);
 
-    setBrandingName(
-      String(branding.workspaceLabel || organisation?.name || ""),
-    );
-    setAccentColor(String(branding.accentColor || "#0284c7"));
     setAllowManagerEscalation(permissions.allowManagerEscalation !== false);
     setAllowCarerIncidentClosure(
       permissions.allowCarerIncidentClosure === true,
     );
-    setDefaultTemplate(String(templates.defaultTaskTemplate || "General care"));
+    setDefaultPriority(String(workflow.defaultPriority || "normal"));
+    setDefaultTemplate(String(templates.defaultTaskTemplate || workflow.defaultTaskTemplate || "General care"));
+    setResidentListView(String(workflow.residentListView || "compact"));
+    setShiftHandoverReminders(workflow.shiftHandoverReminders !== false);
     setShowComplianceSummary(reporting.showComplianceSummary !== false);
-  }, [organisation?.name, organisation?.settings]);
+  }, [organisation?.settings]);
 
   const saveWorkspaceSettings = async () => {
     if (!organisation?.id || !isAdmin) return;
@@ -74,15 +73,17 @@ export default function DashboardSettingsPage() {
 
       const nextSettings = {
         ...currentSettings,
-        branding: {
-          ...asObject(currentSettings.branding),
-          workspaceLabel: brandingName.trim() || organisation.name,
-          accentColor,
-        },
         permissions: {
           ...asObject(currentSettings.permissions),
           allowManagerEscalation,
           allowCarerIncidentClosure,
+        },
+        workflow: {
+          ...asObject(currentSettings.workflow),
+          defaultPriority: defaultPriority.trim() || "normal",
+          defaultTaskTemplate: defaultTemplate.trim() || "General care",
+          residentListView: residentListView.trim() || "compact",
+          shiftHandoverReminders,
         },
         templates: {
           ...asObject(currentSettings.templates),
@@ -109,12 +110,12 @@ export default function DashboardSettingsPage() {
       }
 
       setOrganisation(updatedOrganisation);
-      setMessage("Workspace settings saved.");
+      setMessage("Settings saved.");
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Unable to save workspace settings right now.",
+          : "Unable to save settings right now.",
       );
     } finally {
       setIsSaving(false);
@@ -173,28 +174,52 @@ export default function DashboardSettingsPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Palette className="h-5 w-5" />
-                  Branding
+                  <Settings2 className="h-5 w-5" />
+                  Workflow defaults
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Default task priority
+                  </label>
+                  <select
+                    value={defaultPriority}
+                    onChange={(e) => setDefaultPriority(e.target.value)}
+                    className="w-full rounded-[14px] border border-slate-200 bg-white px-4 py-3 text-slate-900 transition focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                  >
+                    <option value="low">Low</option>
+                    <option value="normal">Normal</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
+                </div>
                 <Input
-                  label="Workspace label"
-                  value={brandingName}
-                  onChange={(event) => setBrandingName(event.target.value)}
-                  placeholder="EnCare Central"
+                  label="Default task template"
+                  value={defaultTemplate}
+                  onChange={(event) => setDefaultTemplate(event.target.value)}
+                  placeholder="General care"
                 />
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Accent colour
+                    Resident list view
                   </label>
-                  <input
-                    type="color"
-                    value={accentColor}
-                    onChange={(event) => setAccentColor(event.target.value)}
-                    className="h-12 w-full rounded-[14px] border border-slate-200 bg-white px-2"
-                  />
+                  <select
+                    value={residentListView}
+                    onChange={(e) => setResidentListView(e.target.value)}
+                    className="w-full rounded-[14px] border border-slate-200 bg-white px-4 py-3 text-slate-900 transition focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                  >
+                    <option value="compact">Compact</option>
+                    <option value="detailed">Detailed</option>
+                    <option value="cards">Cards</option>
+                  </select>
                 </div>
+                <ToggleRow
+                  label="Shift handover reminders"
+                  description="Prompt carers to complete handover notes at shift end."
+                  checked={shiftHandoverReminders}
+                  onChange={setShiftHandoverReminders}
+                />
               </CardContent>
             </Card>
 
@@ -224,34 +249,13 @@ export default function DashboardSettingsPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  Templates
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Input
-                  label="Default task template"
-                  value={defaultTemplate}
-                  onChange={(event) => setDefaultTemplate(event.target.value)}
-                  placeholder="General care"
-                />
-                <p className="text-sm text-slate-500">
-                  Use this as the default task label for newly created manager
-                  tasks.
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
                   <BarChart3 className="h-5 w-5" />
                   Reporting
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <ToggleRow
-                  label="Show compliance summary by default"
+                  label="Show compliance summary"
                   description="Open reports with compliance risk surfaced first."
                   checked={showComplianceSummary}
                   onChange={setShowComplianceSummary}
@@ -278,10 +282,18 @@ export default function DashboardSettingsPage() {
               size="tap"
             >
               <CheckCircle2 className="h-4 w-4" />
-              Save workspace settings
+              Save settings
             </Button>
 
-            <BillingSettings />
+            <div className="pt-2 text-center">
+              <Link
+                href="/dashboard/billing"
+                className="inline-flex items-center gap-1.5 text-sm text-slate-500 transition hover:text-slate-700"
+              >
+                <CreditCard className="h-4 w-4" />
+                Manage billing
+              </Link>
+            </div>
           </>
         ) : (
           <Card>
@@ -289,8 +301,7 @@ export default function DashboardSettingsPage() {
               <div className="flex items-center gap-3 text-slate-500">
                 <Shield className="h-5 w-5" />
                 <p className="text-sm">
-                  Billing and workspace controls are only available to
-                  administrators.
+                  Workspace controls are only available to administrators.
                 </p>
               </div>
             </CardContent>
