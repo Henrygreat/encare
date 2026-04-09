@@ -113,10 +113,10 @@ export async function POST(request: NextRequest) {
       .eq('organisation_id', currentUser.organisation_id)
 
     const existingRoomNumbers = new Set(
-      (existingResidents || [])
-        .map((r) => r.room_number?.toLowerCase())
-        .filter(Boolean) as string[],
-    )
+  (existingResidents || [])
+    .map((r: { room_number: string | null }) => r.room_number?.toLowerCase())
+    .filter(Boolean) as string[],
+)
 
     const existingNames = new Set(
       (existingResidents || []).map(
