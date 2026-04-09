@@ -21,6 +21,12 @@ type ImportRowInsertShape = {
   created_entity_id: string | null
 }
 
+type ExistingResidentRow = {
+  first_name: string
+  last_name: string
+  room_number: string | null
+}
+
 export async function POST(request: NextRequest) {
   try {
     const serverSupabase = createServerClient()
@@ -93,7 +99,7 @@ export async function POST(request: NextRequest) {
         file_name: fileName || 'import.csv',
         file_size: fileSize || null,
         total_rows: rows.length,
-        column_mapping: columnMapping as Json,
+        column_mapping: columnMapping as unknown as Json,
         started_at: new Date().toISOString(),
       })
       .select()
@@ -112,15 +118,18 @@ export async function POST(request: NextRequest) {
       .select('first_name, last_name, room_number')
       .eq('organisation_id', currentUser.organisation_id)
 
+    const existingResidentRows = (existingResidents || []) as ExistingResidentRow[]
+
     const existingRoomNumbers = new Set(
-  (existingResidents || [])
-    .map((r: { room_number: string | null }) => r.room_number?.toLowerCase())
-    .filter(Boolean) as string[],
-)
+      existingResidentRows
+        .map((r: ExistingResidentRow) => r.room_number?.toLowerCase())
+        .filter(Boolean) as string[],
+    )
 
     const existingNames = new Set(
-      (existingResidents || []).map(
-        (r) => `${r.first_name.toLowerCase()}_${r.last_name.toLowerCase()}`,
+      existingResidentRows.map(
+        (r: ExistingResidentRow) =>
+          `${r.first_name.toLowerCase()}_${r.last_name.toLowerCase()}`,
       ),
     )
 
@@ -132,9 +141,10 @@ export async function POST(request: NextRequest) {
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i]
+
       const validation = validateRow(
         row,
-        columnMapping as ColumnMapping,
+        columnMapping,
         currentUser.organisation_id,
         existingRoomNumbers,
       )
@@ -144,7 +154,7 @@ export async function POST(request: NextRequest) {
         importRowsData.push({
           import_job_id: jobData.id,
           row_number: i + 1,
-          raw_data: row as Json,
+          raw_data: row as unknown as Json,
           mapped_data: null,
           status: 'invalid',
           errors: validation.errors as unknown as Json,
@@ -161,28 +171,27 @@ export async function POST(request: NextRequest) {
         importRowsData.push({
           import_job_id: jobData.id,
           row_number: i + 1,
-          raw_data: row as Json,
+          raw_data: row as unknown as Json,
           mapped_data: validation.mappedData as unknown as Json,
           status: 'skipped',
-          errors: [] as Json,
+          errors: [] as unknown as Json,
           warnings: [
             {
               field: 'name',
               message: 'Resident with this name already exists',
             },
-          ] as Json,
+          ] as unknown as Json,
           created_entity_id: null,
         })
         continue
       }
 
       try {
-        const { data: insertedResident, error: insertError } =
-          await adminSupabase
-            .from('residents')
-            .insert(validation.mappedData as ResidentInsert)
-            .select('id')
-            .single()
+        const { data: insertedResident, error: insertError } = await adminSupabase
+          .from('residents')
+          .insert(validation.mappedData as ResidentInsert)
+          .select('id')
+          .single()
 
         if (insertError) {
           throw insertError
@@ -198,10 +207,10 @@ export async function POST(request: NextRequest) {
         importRowsData.push({
           import_job_id: jobData.id,
           row_number: i + 1,
-          raw_data: row as Json,
+          raw_data: row as unknown as Json,
           mapped_data: validation.mappedData as unknown as Json,
           status: 'imported',
-          errors: [] as Json,
+          errors: [] as unknown as Json,
           warnings: validation.warnings as unknown as Json,
           created_entity_id: insertedResident.id,
         })
@@ -210,16 +219,15 @@ export async function POST(request: NextRequest) {
         importRowsData.push({
           import_job_id: jobData.id,
           row_number: i + 1,
-          raw_data: row as Json,
+          raw_data: row as unknown as Json,
           mapped_data: validation.mappedData as unknown as Json,
           status: 'failed',
           errors: [
             {
               field: 'general',
-              message:
-                err instanceof Error ? err.message : 'Failed to insert',
+              message: err instanceof Error ? err.message : 'Failed to insert',
             },
-          ] as Json,
+          ] as unknown as Json,
           warnings: validation.warnings as unknown as Json,
           created_entity_id: null,
         })
