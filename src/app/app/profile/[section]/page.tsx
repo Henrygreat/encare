@@ -194,7 +194,8 @@ export default function ProfileSectionPage({
   params: { section: string };
 }) {
   const router = useRouter();
-  const { user, organisation, refreshAuth } = useAuth();
+  const { user, organisation } = useAuth();
+
   const [preferences, setPreferences] = useState<PreferencesShape>({});
   const [orgSettings, setOrgSettings] = useState<OrgSettingsShape>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -213,15 +214,31 @@ export default function ProfileSectionPage({
   const [residentListView, setResidentListView] = useState<"cards" | "compact">(
     "cards",
   );
+  const [hasHydrated, setHasHydrated] = useState(false);
 
   const section = params.section as SupportedSection;
   const config = SECTION_CONFIG[section];
+
+  useEffect(() => {
+    if (
+      params.section &&
+      !SUPPORTED_SECTIONS.includes(params.section as SupportedSection)
+    ) {
+      router.replace("/app/profile");
+    }
+  }, [params.section, router]);
+
+  useEffect(() => {
+    setHasHydrated(false);
+  }, [params.section]);
 
   useEffect(() => {
     if (!config) {
       router.replace("/app/profile");
       return;
     }
+
+    if (hasHydrated) return;
 
     const nextPreferences = asObject(user?.preferences) as PreferencesShape;
     const nextOrgSettings = asObject(
@@ -239,16 +256,8 @@ export default function ProfileSectionPage({
     );
     setResidentListView(nextOrgSettings.app?.residentListView || "cards");
     setIsLoading(false);
-  }, [config, organisation?.settings, router, user?.preferences]);
-
-  useEffect(() => {
-    if (
-      params.section &&
-      !SUPPORTED_SECTIONS.includes(params.section as SupportedSection)
-    ) {
-      router.replace("/app/profile");
-    }
-  }, [params.section, router]);
+    setHasHydrated(true);
+  }, [config, hasHydrated, organisation?.settings, router, user?.preferences]);
 
   const toggleValue = useMemo(
     () => ({
@@ -353,7 +362,7 @@ export default function ProfileSectionPage({
             handoverReminders:
               section === "notifications"
                 ? !!nextPreferences.notifications?.handoverReminders
-                : !!orgSettings.app?.handoverReminders,
+                : !!toggleValue.app.handoverReminders,
             defaultTaskPriority,
             residentListView,
           },
@@ -370,14 +379,19 @@ export default function ProfileSectionPage({
           throw new Error(orgError.message);
         }
 
-        setOrgSettings(
-          asObject(updatedOrganisation?.settings) as OrgSettingsShape,
+        const savedOrgSettings = asObject(
+          updatedOrganisation?.settings,
+        ) as OrgSettingsShape;
+
+        setOrgSettings(savedOrgSettings);
+        setDefaultTaskPriority(
+          savedOrgSettings.app?.defaultTaskPriority || "medium",
         );
+        setResidentListView(savedOrgSettings.app?.residentListView || "cards");
       }
 
       setPreferences(nextPreferences);
       setSuccessMessage(`${config.title} saved.`);
-      await refreshAuth();
     } catch (err) {
       setError(
         err instanceof Error
