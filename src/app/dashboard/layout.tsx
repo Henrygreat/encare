@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
-import type { UserRole } from "@/lib/database.types";
+import type { Json, UserRole } from "@/lib/database.types";
 
 type NavItem = {
   href: string;
@@ -45,12 +45,48 @@ function getInitials(name: string | null | undefined) {
     .toUpperCase();
 }
 
+function asObject(value: Json | null | undefined): Record<string, any> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, any>)
+    : {};
+}
+
+function normaliseHexColor(value: unknown, fallback = "#0284c7") {
+  if (typeof value !== "string") return fallback;
+  const trimmed = value.trim();
+
+  if (/^#[0-9a-fA-F]{6}$/.test(trimmed)) return trimmed;
+
+  if (/^#[0-9a-fA-F]{3}$/.test(trimmed)) {
+    return (
+      "#" +
+      trimmed[1] +
+      trimmed[1] +
+      trimmed[2] +
+      trimmed[2] +
+      trimmed[3] +
+      trimmed[3]
+    );
+  }
+
+  return fallback;
+}
+
+function hexToRgba(hex: string, alpha: number) {
+  const safeHex = normaliseHexColor(hex).replace("#", "");
+  const r = Number.parseInt(safeHex.slice(0, 2), 16);
+  const g = Number.parseInt(safeHex.slice(2, 4), 16);
+  const b = Number.parseInt(safeHex.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   const supabase = createClient();
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -78,13 +114,18 @@ export default async function DashboardLayout({
     (item) => !item.roles || (role && item.roles.includes(role)),
   );
 
+  const organisationSettings = asObject(organisation?.settings);
+  const brandingSettings = asObject(organisationSettings.branding);
+
   const workspaceLabel =
-    typeof organisation?.settings === "object" &&
-    organisation?.settings &&
-    !Array.isArray(organisation.settings)
-      ? ((organisation.settings as Record<string, any>).branding
-          ?.workspaceLabel as string | undefined)
+    typeof brandingSettings.workspaceLabel === "string"
+      ? brandingSettings.workspaceLabel
       : undefined;
+
+  const accentColor = normaliseHexColor(brandingSettings.accentColor);
+
+  const brandSoftBg = hexToRgba(accentColor, 0.12);
+  const brandSoftBorder = hexToRgba(accentColor, 0.2);
 
   const displayName = profile?.full_name || "EnCare Manager";
   const displayEmail = profile?.email || user.email || "No email available";
@@ -93,11 +134,21 @@ export default async function DashboardLayout({
   const initials = getInitials(displayName);
 
   return (
-    <div className="flex min-h-screen bg-surface-50">
+    <div
+      className="flex min-h-screen bg-surface-50"
+      style={
+        {
+          ["--brand-color" as string]: accentColor,
+        } as React.CSSProperties
+      }
+    >
       <aside className="hidden border-r border-surface-200 bg-white md:flex md:w-64 md:flex-col">
         <div className="flex h-16 items-center border-b border-surface-200 px-6">
           <Link href="/dashboard" className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-600">
+            <div
+              className="flex h-9 w-9 items-center justify-center rounded-xl"
+              style={{ backgroundColor: accentColor }}
+            >
               <span className="text-lg font-bold text-white">E</span>
             </div>
             <div>
@@ -113,7 +164,14 @@ export default async function DashboardLayout({
 
         <nav className="flex-1 space-y-1 p-4">
           {visibleNavItems.map((item) => (
-            <NavLink key={item.href} href={item.href} icon={item.icon}>
+            <NavLink
+              key={item.href}
+              href={item.href}
+              icon={item.icon}
+              accentColor={accentColor}
+              brandSoftBg={brandSoftBg}
+              brandSoftBorder={brandSoftBorder}
+            >
               {item.label}
             </NavLink>
           ))}
@@ -121,8 +179,13 @@ export default async function DashboardLayout({
 
         <div className="border-t border-surface-200 p-4">
           <div className="mb-3 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100">
-              <span className="font-semibold text-primary-700">{initials}</span>
+            <div
+              className="flex h-10 w-10 items-center justify-center rounded-full"
+              style={{ backgroundColor: brandSoftBg }}
+            >
+              <span className="font-semibold" style={{ color: accentColor }}>
+                {initials}
+              </span>
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-gray-900">
@@ -134,7 +197,18 @@ export default async function DashboardLayout({
           <form action="/api/auth/signout" method="post">
             <button
               type="submit"
-              className="flex w-full items-center gap-2 rounded-button px-3 py-2 text-sm text-gray-600 transition-colors hover:bg-surface-50 hover:text-gray-900"
+              className="flex w-full items-center gap-2 rounded-button px-3 py-2 text-sm text-gray-600 transition-colors hover:text-gray-900"
+              style={
+                {
+                  ["--hover-bg" as string]: brandSoftBg,
+                } as React.CSSProperties
+              }
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = brandSoftBg;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "transparent";
+              }}
             >
               <LogOut className="h-4 w-4" />
               Sign out
@@ -147,7 +221,10 @@ export default async function DashboardLayout({
         <header className="flex h-16 items-center justify-between border-b border-surface-200 bg-white px-6">
           <div className="flex items-center gap-4 md:hidden">
             <Link href="/dashboard" className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600">
+              <div
+                className="flex h-8 w-8 items-center justify-center rounded-lg"
+                style={{ backgroundColor: accentColor }}
+              >
                 <span className="font-bold text-white">E</span>
               </div>
             </Link>
@@ -160,8 +237,13 @@ export default async function DashboardLayout({
               <Bell className="h-5 w-5" />
               <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-care-red" />
             </button>
-            <div className="hidden h-10 w-10 items-center justify-center rounded-full bg-primary-100 md:flex">
-              <span className="font-semibold text-primary-700">{initials}</span>
+            <div
+              className="hidden h-10 w-10 items-center justify-center rounded-full md:flex"
+              style={{ backgroundColor: brandSoftBg }}
+            >
+              <span className="font-semibold" style={{ color: accentColor }}>
+                {initials}
+              </span>
             </div>
           </div>
         </header>
@@ -175,7 +257,7 @@ export default async function DashboardLayout({
             <Link
               key={item.href}
               href={item.href}
-              className="flex h-full flex-1 flex-col items-center justify-center py-2 text-gray-500 transition-colors hover:text-primary-600"
+              className="flex h-full flex-1 flex-col items-center justify-center py-2 text-gray-500 transition-colors hover:text-gray-900"
             >
               <item.icon className="h-5 w-5" />
               <span className="mt-1 text-xs">{item.label}</span>
@@ -191,10 +273,16 @@ function NavLink({
   href,
   icon: Icon,
   children,
+  accentColor,
+  brandSoftBg,
+  brandSoftBorder,
 }: {
   href: string;
   icon: typeof LayoutDashboard;
   children: React.ReactNode;
+  accentColor: string;
+  brandSoftBg: string;
+  brandSoftBorder: string;
 }) {
   const isActive = false;
 
@@ -202,11 +290,34 @@ function NavLink({
     <Link
       href={href}
       className={cn(
-        "flex items-center gap-3 rounded-button px-3 py-2.5 text-sm font-medium transition-colors",
+        "flex items-center gap-3 rounded-button border px-3 py-2.5 text-sm font-medium transition-colors",
         isActive
-          ? "bg-primary-50 text-primary-700"
-          : "text-gray-600 hover:bg-surface-50 hover:text-gray-900",
+          ? "text-gray-900"
+          : "border-transparent text-gray-600 hover:text-gray-900",
       )}
+      style={
+        isActive
+          ? {
+              backgroundColor: brandSoftBg,
+              borderColor: brandSoftBorder,
+              color: accentColor,
+            }
+          : undefined
+      }
+      onMouseEnter={(e) => {
+        if (!isActive) {
+          e.currentTarget.style.backgroundColor = brandSoftBg;
+          e.currentTarget.style.borderColor = brandSoftBorder;
+          e.currentTarget.style.color = accentColor;
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!isActive) {
+          e.currentTarget.style.backgroundColor = "transparent";
+          e.currentTarget.style.borderColor = "transparent";
+          e.currentTarget.style.color = "";
+        }
+      }}
     >
       <Icon className="h-5 w-5" />
       {children}
