@@ -289,7 +289,7 @@ export default function ProfileSectionPage({
     setOrgSettings((current) => ({
       ...current,
       app: {
-        ...current.app,
+        ...(current.app || {}),
         [key]: value,
       },
     }));
@@ -333,47 +333,46 @@ export default function ProfileSectionPage({
         },
       };
 
-      const updates: Array<Promise<any>> = [
-        supabase
-          .from("users")
-          .update({ preferences: nextPreferences })
-          .eq("id", user.id),
-      ];
+      const { error: userError } = await supabase
+        .from("users")
+        .update({ preferences: nextPreferences })
+        .eq("id", user.id);
 
-      if (section === "settings" || section === "notifications") {
+      if (userError) {
+        throw new Error(userError.message);
+      }
+
+      if (
+        (section === "settings" || section === "notifications") &&
+        organisation?.id
+      ) {
         const nextOrgSettings: OrgSettingsShape = {
           ...orgSettings,
           app: {
             ...(orgSettings.app || {}),
+            handoverReminders:
+              section === "notifications"
+                ? !!nextPreferences.notifications?.handoverReminders
+                : !!orgSettings.app?.handoverReminders,
             defaultTaskPriority,
             residentListView,
           },
         };
 
-        if (section === "notifications") {
-          nextOrgSettings.app = {
-            ...nextOrgSettings.app,
-            handoverReminders: !!preferences.notifications?.handoverReminders,
-          };
+        const { data: updatedOrganisation, error: orgError } = await supabase
+          .from("organisations")
+          .update({ settings: nextOrgSettings })
+          .eq("id", organisation.id)
+          .select("settings")
+          .single();
+
+        if (orgError) {
+          throw new Error(orgError.message);
         }
 
-        setOrgSettings(nextOrgSettings);
-
-        if (organisation?.id) {
-          updates.push(
-            supabase
-              .from("organisations")
-              .update({ settings: nextOrgSettings })
-              .eq("id", organisation.id),
-          );
-        }
-      }
-
-      const results = await Promise.all(updates);
-      const failed = results.find((result) => result.error);
-
-      if (failed?.error) {
-        throw new Error(failed.error.message);
+        setOrgSettings(
+          asObject(updatedOrganisation?.settings) as OrgSettingsShape,
+        );
       }
 
       setPreferences(nextPreferences);
