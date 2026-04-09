@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ToastProvider } from "@/components/providers/toast-provider";
-import ThemeClient from "@/components/providers/theme-client";
+import ThemeClient from "@/components/theme-client";
 
 export const metadata: Metadata = {
   title: "EnCare - Care Logging Made Simple",
