@@ -1,215 +1,190 @@
-import { redirect } from "next/navigation";
-import Link from "next/link";
-import {
-  LayoutDashboard,
-  Users,
-  UserCog,
-  FileBarChart,
-  Settings,
-  Bell,
-  LogOut,
-  ClipboardList,
-} from "lucide-react";
-import { createClient } from "@/lib/supabase/server";
-import { cn } from "@/lib/utils";
-import type { UserRole } from "@/lib/database.types";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-type NavItem = {
-  href: string;
-  icon: typeof LayoutDashboard;
-  label: string;
-  roles?: UserRole[];
-};
+@layer base {
+  :root {
+    --safe-area-inset-top: env(safe-area-inset-top, 0px);
+    --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-area-inset-left: env(safe-area-inset-left, 0px);
+    --safe-area-inset-right: env(safe-area-inset-right, 0px);
 
-const navItems: NavItem[] = [
-  { href: "/dashboard", icon: LayoutDashboard, label: "Today" },
-  { href: "/dashboard/residents", icon: Users, label: "Residents" },
-  { href: "/dashboard/staff", icon: UserCog, label: "Staff" },
-  {
-    href: "/dashboard/tasks",
-    icon: ClipboardList,
-    label: "Tasks",
-    roles: ["admin", "manager"],
-  },
-  { href: "/dashboard/reports", icon: FileBarChart, label: "Reports" },
-  { href: "/dashboard/settings", icon: Settings, label: "Settings" },
-];
-
-function getInitials(name: string | null | undefined) {
-  if (!name) return "EC";
-  return name
-    .split(" ")
-    .map((part) => part.charAt(0))
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-}
-
-export default async function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/login");
+    --brand-color: #0284c7;
+    --app-bg: #f8fafc;
+    --app-text: #0f172a;
+    --app-panel: rgba(255, 255, 255, 0.82);
+    --app-border: rgba(148, 163, 184, 0.2);
+    --app-gradient-1: rgba(14, 165, 233, 0.14);
+    --app-gradient-2: rgba(16, 185, 129, 0.08);
   }
 
-  const { data: profile } = await supabase
-    .from("users")
-    .select("full_name, email, organisation_id, role")
-    .eq("id", user.id)
-    .maybeSingle();
+  .dark {
+    --app-bg: #0f172a;
+    --app-text: #e2e8f0;
+    --app-panel: rgba(15, 23, 42, 0.82);
+    --app-border: rgba(71, 85, 105, 0.35);
+    --app-gradient-1: rgba(2, 132, 199, 0.18);
+    --app-gradient-2: rgba(16, 185, 129, 0.1);
+  }
 
-  const { data: organisation } = profile?.organisation_id
-    ? await supabase
-        .from("organisations")
-        .select("name, settings")
-        .eq("id", profile.organisation_id)
-        .maybeSingle()
-    : { data: null };
+  html {
+    -webkit-tap-highlight-color: transparent;
+    scroll-behavior: smooth;
+  }
 
-  const role = profile?.role as UserRole | undefined;
-  const visibleNavItems = navItems.filter(
-    (item) => !item.roles || (role && item.roles.includes(role)),
-  );
+  body {
+    @apply antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    background-color: var(--app-bg);
+    color: var(--app-text);
+    background-image:
+      radial-gradient(circle at top left, var(--app-gradient-1), transparent 26%),
+      radial-gradient(circle at top right, var(--app-gradient-2), transparent 22%),
+      linear-gradient(180deg, var(--app-bg) 0%, var(--app-bg) 100%);
+    min-height: 100vh;
+    transition:
+      background-color 0.25s ease,
+      color 0.25s ease,
+      background-image 0.25s ease;
+  }
 
-  const workspaceLabel =
-    typeof organisation?.settings === "object" &&
-    organisation?.settings &&
-    !Array.isArray(organisation.settings)
-      ? ((organisation.settings as Record<string, any>).branding
-          ?.workspaceLabel as string | undefined)
-      : undefined;
+  .overflow-y-auto,
+  .overflow-x-auto,
+  .overflow-auto {
+    -webkit-overflow-scrolling: touch;
+  }
 
-  const displayName = profile?.full_name || "EnCare Manager";
-  const displayEmail = profile?.email || user.email || "No email available";
-  const organisationName =
-    workspaceLabel || organisation?.name || "EnCare Workspace";
-  const initials = getInitials(displayName);
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
 
-  return (
-    <div className="flex min-h-screen bg-surface-50">
-      <aside className="hidden border-r border-surface-200 bg-white md:flex md:w-64 md:flex-col">
-        <div className="flex h-16 items-center border-b border-surface-200 px-6">
-          <Link href="/dashboard" className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-600">
-              <span className="text-lg font-bold text-white">E</span>
-            </div>
-            <div>
-              <span className="block text-xl font-bold text-gray-900">
-                EnCare
-              </span>
-              <span className="block text-xs text-slate-500">
-                {organisationName}
-              </span>
-            </div>
-          </Link>
-        </div>
-
-        <nav className="flex-1 space-y-1 p-4">
-          {visibleNavItems.map((item) => (
-            <NavLink key={item.href} href={item.href} icon={item.icon}>
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
-
-        <div className="border-t border-surface-200 p-4">
-          <div className="mb-3 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100">
-              <span className="font-semibold text-primary-700">{initials}</span>
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-gray-900">
-                {displayName}
-              </p>
-              <p className="truncate text-xs text-gray-500">{displayEmail}</p>
-            </div>
-          </div>
-          <form action="/api/auth/signout" method="post">
-            <button
-              type="submit"
-              className="flex w-full items-center gap-2 rounded-button px-3 py-2 text-sm text-gray-600 transition-colors hover:bg-surface-50 hover:text-gray-900"
-            >
-              <LogOut className="h-4 w-4" />
-              Sign out
-            </button>
-          </form>
-        </div>
-      </aside>
-
-      <div className="flex min-h-screen flex-1 flex-col">
-        <header className="flex h-16 items-center justify-between border-b border-surface-200 bg-white px-6">
-          <div className="flex items-center gap-4 md:hidden">
-            <Link href="/dashboard" className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600">
-                <span className="font-bold text-white">E</span>
-              </div>
-            </Link>
-          </div>
-
-          <div className="flex-1" />
-
-          <div className="flex items-center gap-3">
-            <button className="relative rounded-full p-2 text-gray-500 transition-colors hover:bg-surface-50 hover:text-gray-700">
-              <Bell className="h-5 w-5" />
-              <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-care-red" />
-            </button>
-            <div className="hidden h-10 w-10 items-center justify-center rounded-full bg-primary-100 md:flex">
-              <span className="font-semibold text-primary-700">{initials}</span>
-            </div>
-          </div>
-        </header>
-
-        <main className="flex-1 overflow-auto p-6">{children}</main>
-      </div>
-
-      <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-surface-200 bg-white safe-area-inset-bottom md:hidden">
-        <div className="flex h-16 items-center justify-around">
-          {visibleNavItems.slice(0, 5).map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="flex h-full flex-1 flex-col items-center justify-center py-2 text-gray-500 transition-colors hover:text-primary-600"
-            >
-              <item.icon className="h-5 w-5" />
-              <span className="mt-1 text-xs">{item.label}</span>
-            </Link>
-          ))}
-        </div>
-      </nav>
-    </div>
-  );
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
 }
 
-function NavLink({
-  href,
-  icon: Icon,
-  children,
-}: {
-  href: string;
-  icon: typeof LayoutDashboard;
-  children: React.ReactNode;
-}) {
-  const isActive = false;
+@layer components {
+  .safe-area-inset-top {
+    padding-top: var(--safe-area-inset-top);
+  }
 
-  return (
-    <Link
-      href={href}
-      className={cn(
-        "flex items-center gap-3 rounded-button px-3 py-2.5 text-sm font-medium transition-colors",
-        isActive
-          ? "bg-primary-50 text-primary-700"
-          : "text-gray-600 hover:bg-surface-50 hover:text-gray-900",
-      )}
-    >
-      <Icon className="h-5 w-5" />
-      {children}
-    </Link>
-  );
+  .safe-area-inset-bottom {
+    padding-bottom: var(--safe-area-inset-bottom);
+  }
+
+  .touch-focus:focus-visible {
+    @apply outline-none ring-2 ring-offset-2;
+    ring-color: var(--brand-color);
+  }
+
+  .touch-target {
+    @apply min-h-[44px] min-w-[44px];
+  }
+
+  .pull-indicator {
+    @apply flex items-center justify-center h-12 text-gray-400;
+  }
+
+  .card-interactive {
+    @apply transition-all duration-200 hover:shadow-card-hover active:scale-[0.98];
+  }
+
+  .skeleton {
+    @apply animate-pulse rounded;
+    background-color: rgba(148, 163, 184, 0.2);
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .glass-panel {
+    background: var(--app-panel);
+    border: 1px solid var(--app-border);
+    backdrop-filter: blur(18px);
+  }
+
+  .brand-bg {
+    background-color: var(--brand-color);
+  }
+
+  .brand-text {
+    color: var(--brand-color);
+  }
+
+  .brand-border {
+    border-color: var(--brand-color);
+  }
+}
+
+@layer utilities {
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
+@media (display-mode: standalone) {
+  body {
+    overscroll-behavior-y: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
 }
