@@ -11,3 +11,6 @@ export { useDashboard, type DashboardStats } from './use-dashboard'
 
 // Sync
 export { useSync, useSyncStatus } from './use-sync'
+
+// Import
+export { useImportJobs, useImportJob, useImportWorkflow, type ImportState, type ImportStep } from './use-import'

@@ -13,6 +13,9 @@ export type LogType = 'meal' | 'drink' | 'medication' | 'toileting' | 'mood' | '
 export type IncidentSeverity = 'low' | 'medium' | 'high' | 'critical'
 export type SyncStatus = 'synced' | 'pending' | 'failed'
 export type SubscriptionStatus = 'incomplete' | 'incomplete_expired' | 'trialing' | 'active' | 'past_due' | 'canceled' | 'unpaid' | 'paused'
+export type ImportStatus = 'pending' | 'validating' | 'validated' | 'importing' | 'completed' | 'failed' | 'cancelled'
+export type ImportRowStatus = 'pending' | 'valid' | 'invalid' | 'imported' | 'skipped' | 'failed'
+export type ImportEntityType = 'residents' | 'staff' | 'tasks' | 'care_plans'
 
 export interface Database {
   public: {
@@ -707,6 +710,117 @@ export interface Database {
         }
         Relationships: []
       }
+      import_jobs: {
+        Row: {
+          id: string
+          organisation_id: string
+          created_by: string
+          entity_type: ImportEntityType
+          status: ImportStatus
+          file_name: string
+          file_size: number | null
+          total_rows: number
+          valid_rows: number
+          invalid_rows: number
+          imported_rows: number
+          skipped_rows: number
+          failed_rows: number
+          column_mapping: Json
+          options: Json
+          error_message: string | null
+          started_at: string | null
+          completed_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organisation_id: string
+          created_by: string
+          entity_type: ImportEntityType
+          status?: ImportStatus
+          file_name: string
+          file_size?: number | null
+          total_rows?: number
+          valid_rows?: number
+          invalid_rows?: number
+          imported_rows?: number
+          skipped_rows?: number
+          failed_rows?: number
+          column_mapping?: Json
+          options?: Json
+          error_message?: string | null
+          started_at?: string | null
+          completed_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organisation_id?: string
+          created_by?: string
+          entity_type?: ImportEntityType
+          status?: ImportStatus
+          file_name?: string
+          file_size?: number | null
+          total_rows?: number
+          valid_rows?: number
+          invalid_rows?: number
+          imported_rows?: number
+          skipped_rows?: number
+          failed_rows?: number
+          column_mapping?: Json
+          options?: Json
+          error_message?: string | null
+          started_at?: string | null
+          completed_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      import_rows: {
+        Row: {
+          id: string
+          import_job_id: string
+          row_number: number
+          raw_data: Json
+          mapped_data: Json | null
+          status: ImportRowStatus
+          errors: Json
+          warnings: Json
+          created_entity_id: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          import_job_id: string
+          row_number: number
+          raw_data: Json
+          mapped_data?: Json | null
+          status?: ImportRowStatus
+          errors?: Json
+          warnings?: Json
+          created_entity_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          import_job_id?: string
+          row_number?: number
+          raw_data?: Json
+          mapped_data?: Json | null
+          status?: ImportRowStatus
+          errors?: Json
+          warnings?: Json
+          created_entity_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       resident_timeline: {
@@ -827,3 +941,9 @@ export type Plan = Database['public']['Tables']['plans']['Row']
 export type BillingCustomerInsert = Database['public']['Tables']['billing_customers']['Insert']
 export type SubscriptionInsert = Database['public']['Tables']['subscriptions']['Insert']
 export type PlanInsert = Database['public']['Tables']['plans']['Insert']
+
+// Import types
+export type ImportJob = Database['public']['Tables']['import_jobs']['Row']
+export type ImportJobInsert = Database['public']['Tables']['import_jobs']['Insert']
+export type ImportRow = Database['public']['Tables']['import_rows']['Row']
+export type ImportRowInsert = Database['public']['Tables']['import_rows']['Insert']
