@@ -1,8 +1,6 @@
 "use client";
 
-export const dynamic = "force-dynamic";
-
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -21,6 +19,25 @@ import { createClient } from "@/lib/supabase/client";
 import { AuthShell } from "@/components/layout/auth-shell";
 
 export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <AuthShell
+          title="Welcome back"
+          description="Sign in to open your live EnCare workspace."
+        >
+          <div className="flex items-center justify-center py-10 text-sm text-slate-500">
+            Loading login...
+          </div>
+        </AuthShell>
+      }
+    >
+      <LoginPageContent />
+    </Suspense>
+  );
+}
+
+function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isOnline } = useOfflineStore();
