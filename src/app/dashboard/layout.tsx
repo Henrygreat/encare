@@ -9,6 +9,7 @@ import {
   Bell,
   LogOut,
   ClipboardList,
+  ScrollText,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,12 @@ const navItems: NavItem[] = [
     href: "/dashboard/tasks",
     icon: ClipboardList,
     label: "Tasks",
+    roles: ["admin", "manager"],
+  },
+  {
+    href: "/dashboard/policies",
+    icon: ScrollText,
+    label: "Policies",
     roles: ["admin", "manager"],
   },
   { href: "/dashboard/reports", icon: FileBarChart, label: "Reports" },

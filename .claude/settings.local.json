@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(dir \"C:\\\\Users\\\\user\\\\Downloads\\\\encare\" /s /b)",
+      "Bash(findstr:*)"
     ]
   }
 }

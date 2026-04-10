@@ -16,6 +16,7 @@ export type SubscriptionStatus = 'incomplete' | 'incomplete_expired' | 'trialing
 export type ImportStatus = 'pending' | 'validating' | 'validated' | 'importing' | 'completed' | 'failed' | 'cancelled'
 export type ImportRowStatus = 'pending' | 'valid' | 'invalid' | 'imported' | 'skipped' | 'failed'
 export type ImportEntityType = 'residents' | 'staff' | 'tasks' | 'care_plans'
+export type PolicyStatus = 'draft' | 'published' | 'archived'
 
 export interface Database {
   public: {
@@ -821,6 +822,117 @@ export interface Database {
         }
         Relationships: []
       }
+      policies: {
+        Row: {
+          id: string
+          organisation_id: string
+          title: string
+          summary: string | null
+          content: string | null
+          file_url: string | null
+          file_name: string | null
+          version: number
+          status: PolicyStatus
+          requires_acknowledgement: boolean
+          published_at: string | null
+          created_by: string
+          updated_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organisation_id: string
+          title: string
+          summary?: string | null
+          content?: string | null
+          file_url?: string | null
+          file_name?: string | null
+          version?: number
+          status?: PolicyStatus
+          requires_acknowledgement?: boolean
+          published_at?: string | null
+          created_by: string
+          updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organisation_id?: string
+          title?: string
+          summary?: string | null
+          content?: string | null
+          file_url?: string | null
+          file_name?: string | null
+          version?: number
+          status?: PolicyStatus
+          requires_acknowledgement?: boolean
+          published_at?: string | null
+          created_by?: string
+          updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      policy_assignments: {
+        Row: {
+          id: string
+          policy_id: string
+          user_id: string
+          assigned_at: string
+          due_at: string | null
+          is_required: boolean
+        }
+        Insert: {
+          id?: string
+          policy_id: string
+          user_id: string
+          assigned_at?: string
+          due_at?: string | null
+          is_required?: boolean
+        }
+        Update: {
+          id?: string
+          policy_id?: string
+          user_id?: string
+          assigned_at?: string
+          due_at?: string | null
+          is_required?: boolean
+        }
+        Relationships: []
+      }
+      policy_acknowledgements: {
+        Row: {
+          id: string
+          policy_id: string
+          user_id: string
+          assignment_id: string | null
+          acknowledged_at: string
+          acknowledgement_text: string | null
+          version_read: number
+        }
+        Insert: {
+          id?: string
+          policy_id: string
+          user_id: string
+          assignment_id?: string | null
+          acknowledged_at?: string
+          acknowledgement_text?: string | null
+          version_read: number
+        }
+        Update: {
+          id?: string
+          policy_id?: string
+          user_id?: string
+          assignment_id?: string | null
+          acknowledged_at?: string
+          acknowledgement_text?: string | null
+          version_read?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       resident_timeline: {
@@ -947,3 +1059,12 @@ export type ImportJob = Database['public']['Tables']['import_jobs']['Row']
 export type ImportJobInsert = Database['public']['Tables']['import_jobs']['Insert']
 export type ImportRow = Database['public']['Tables']['import_rows']['Row']
 export type ImportRowInsert = Database['public']['Tables']['import_rows']['Insert']
+
+// Policy types
+export type Policy = Database['public']['Tables']['policies']['Row']
+export type PolicyInsert = Database['public']['Tables']['policies']['Insert']
+export type PolicyUpdate = Database['public']['Tables']['policies']['Update']
+export type PolicyAssignment = Database['public']['Tables']['policy_assignments']['Row']
+export type PolicyAssignmentInsert = Database['public']['Tables']['policy_assignments']['Insert']
+export type PolicyAcknowledgement = Database['public']['Tables']['policy_acknowledgements']['Row']
+export type PolicyAcknowledgementInsert = Database['public']['Tables']['policy_acknowledgements']['Insert']

@@ -12,6 +12,7 @@ import {
   Moon,
   Lock,
   AlertCircle,
+  ScrollText,
 } from 'lucide-react'
 import { MobileHeader, PageContainer } from '@/components/layout/mobile-header'
 import { Card } from '@/components/ui/card'
@@ -99,6 +100,16 @@ export default function ProfilePage() {
           </div>
           <SyncStatus />
         </div>
+      </Card>
+
+      <Card className="mb-4" padding="none">
+        <MenuItem
+          icon={<ScrollText className="h-5 w-5" />}
+          label="Company Policies"
+          sublabel="View and acknowledge policies"
+          onClick={() => router.push('/app/policies')}
+          isLast
+        />
       </Card>
 
       <Card className="mb-4" padding="none">
