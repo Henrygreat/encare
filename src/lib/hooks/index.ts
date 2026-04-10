@@ -14,3 +14,6 @@ export { useSync, useSyncStatus } from './use-sync'
 
 // Import
 export { useImportJobs, useImportJob, useImportWorkflow, type ImportState, type ImportStep } from './use-import'
+
+// Inactivity
+export { useInactivity, INACTIVITY_DEFAULTS, type InactivityConfig } from './use-inactivity'

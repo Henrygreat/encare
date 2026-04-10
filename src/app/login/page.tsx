@@ -1,7 +1,9 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   CloudOff,
@@ -10,6 +12,7 @@ import {
   Mail,
   LockKeyhole,
   ArrowRight,
+  Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +22,7 @@ import { AuthShell } from "@/components/layout/auth-shell";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { isOnline } = useOfflineStore();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,6 +30,8 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [error, setError] = useState("");
+
+  const logoutReason = searchParams.get("reason");
 
   useEffect(() => {
     let isMounted = true;
@@ -130,6 +136,13 @@ export default function LoginPage() {
         </div>
       }
     >
+      {logoutReason === "inactivity" && (
+        <div className="mb-4 flex items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          <Clock className="h-4 w-4" />
+          You were logged out due to inactivity.
+        </div>
+      )}
+
       {!isOnline && (
         <div className="mb-4 flex items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
           <CloudOff className="h-4 w-4" />
