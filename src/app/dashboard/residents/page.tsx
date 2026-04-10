@@ -8,6 +8,7 @@ import {
   Plus,
   Search,
   Sparkles,
+  Upload,
   Users,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -311,6 +312,15 @@ export default function ResidentsManagementPage() {
               >
                 <Plus className="mr-2 h-4 w-4" />
                 Add resident
+              </Button>
+            </Link>
+            <Link href="/dashboard/import">
+              <Button
+                variant="secondary"
+                className="border-white/30 bg-white/10 text-white hover:bg-white/20"
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                Import
               </Button>
             </Link>
             <Link href="/app/residents">
