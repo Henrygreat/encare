@@ -1,15 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
-  Target,
-  Heart,
   Check,
   ChevronDown,
   ChevronUp,
   Calendar,
   User,
+  FileText,
 } from "lucide-react";
 import { MobileHeader, PageContainer } from "@/components/layout/mobile-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,22 +17,12 @@ import { Chip } from "@/components/ui/chip";
 import { formatDate } from "@/lib/utils";
 import { useCarePlan, useMarkCarePlanViewed } from "@/lib/hooks";
 
-type KeyNeed = {
-  category?: string;
-  description?: string;
-};
-
-type KeyRisk = {
-  type?: string;
-  level?: string;
-  description?: string;
-  mitigation?: string;
-};
-
-type Goal = {
-  description?: string;
-  status?: string;
-  target_date?: string | null;
+type CarePlanSection = {
+  id: string;
+  section_key?: string | null;
+  section_label?: string | null;
+  content?: string | null;
+  sort_order?: number | null;
 };
 
 function safeFormatDate(value?: string | null, fallback = "Not set") {
@@ -45,14 +34,24 @@ function safeFormatDate(value?: string | null, fallback = "Not set") {
   return formatDate(value);
 }
 
-function asArray<T>(value: unknown): T[] {
-  return Array.isArray(value) ? (value as T[]) : [];
+function asSectionArray(value: unknown): CarePlanSection[] {
+  return Array.isArray(value) ? (value as CarePlanSection[]) : [];
+}
+
+function getSectionContent(
+  sections: CarePlanSection[],
+  key: string,
+  fallback = "No information recorded.",
+) {
+  const section = sections.find((item) => item.section_key === key);
+  return section?.content?.trim() || fallback;
 }
 
 export default function CarePlanPage({ params }: { params: { id: string } }) {
   const [expandedSections, setExpandedSections] = useState<string[]>([
-    "risks",
-    "needs",
+    "dietary_requirements",
+    "mobility",
+    "risk_notes",
   ]);
   const [markedAsViewed, setMarkedAsViewed] = useState(false);
   const [isMarkingViewed, setIsMarkingViewed] = useState(false);
@@ -61,12 +60,58 @@ export default function CarePlanPage({ params }: { params: { id: string } }) {
   const { markAsViewed: recordView } = useMarkCarePlanViewed();
 
   useEffect(() => {
-    if (carePlan?.has_viewed) {
+    if ((carePlan as any)?.has_viewed) {
       setMarkedAsViewed(true);
     } else {
       setMarkedAsViewed(false);
     }
-  }, [carePlan?.has_viewed]);
+  }, [(carePlan as any)?.has_viewed]);
+
+  const sections = useMemo(() => {
+    const raw =
+      (carePlan as any)?.care_plan_sections ||
+      (carePlan as any)?.sections ||
+      [];
+    return asSectionArray(raw).sort(
+      (a, b) => (a.sort_order || 0) - (b.sort_order || 0),
+    );
+  }, [carePlan]);
+
+  const residentName =
+    (carePlan as any)?.resident_name ||
+    (() => {
+      const resident = (carePlan as any)?.residents;
+      if (!resident) return "Resident";
+      return resident.preferred_name || resident.first_name || "Resident";
+    })();
+
+  const summary =
+    (carePlan as any)?.summary || "No care plan summary has been added yet.";
+
+  const reviewDate = safeFormatDate((carePlan as any)?.review_date);
+  const publishedAt = safeFormatDate((carePlan as any)?.published_at);
+  const createdAt = safeFormatDate((carePlan as any)?.created_at);
+
+  const toggleSection = (sectionKey: string) => {
+    setExpandedSections((prev) =>
+      prev.includes(sectionKey)
+        ? prev.filter((item) => item !== sectionKey)
+        : [...prev, sectionKey],
+    );
+  };
+
+  const handleMarkAsViewed = async () => {
+    if (!carePlan?.id) return;
+
+    setIsMarkingViewed(true);
+    const result = await recordView(carePlan.id);
+
+    if (result.success) {
+      setMarkedAsViewed(true);
+    }
+
+    setIsMarkingViewed(false);
+  };
 
   if (isLoading) {
     return (
@@ -86,7 +131,7 @@ export default function CarePlanPage({ params }: { params: { id: string } }) {
     );
   }
 
-  if (error || !carePlan) {
+  if (error) {
     return (
       <PageContainer
         header={
@@ -98,47 +143,44 @@ export default function CarePlanPage({ params }: { params: { id: string } }) {
         }
       >
         <div className="p-4 text-center text-gray-500">
-          {error
-            ? "Error loading care plan"
-            : "No care plan found for this resident"}
+          Error loading care plan
         </div>
       </PageContainer>
     );
   }
 
-  const keyNeeds = asArray<KeyNeed>((carePlan as any).key_needs);
-  const keyRisks = asArray<KeyRisk>((carePlan as any).key_risks);
-  const goals = asArray<Goal>((carePlan as any).goals);
-
-  const toggleSection = (section: string) => {
-    setExpandedSections((prev) =>
-      prev.includes(section)
-        ? prev.filter((s) => s !== section)
-        : [...prev, section],
+  if (!carePlan) {
+    return (
+      <PageContainer
+        header={
+          <MobileHeader
+            title="Care Plan"
+            showBack
+            backHref={`/app/residents/${params.id}`}
+          />
+        }
+      >
+        <div className="p-6 text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-surface-100">
+            <FileText className="h-7 w-7 text-gray-400" />
+          </div>
+          <h2 className="text-lg font-semibold text-gray-900">
+            No active care plan
+          </h2>
+          <p className="mt-2 text-sm text-gray-500">
+            A care plan has not been published for this resident yet.
+          </p>
+        </div>
+      </PageContainer>
     );
-  };
-
-  const handleMarkAsViewed = async () => {
-    setIsMarkingViewed(true);
-    const result = await recordView(carePlan.id);
-    if (result.success) {
-      setMarkedAsViewed(true);
-    }
-    setIsMarkingViewed(false);
-  };
-
-  const summary =
-    (carePlan as any).summary || "No care plan summary has been added yet.";
-
-  const reviewDate = safeFormatDate((carePlan as any).review_date);
-  const lastReviewedAt = safeFormatDate((carePlan as any).last_reviewed_at);
+  }
 
   return (
     <PageContainer
       header={
         <MobileHeader
           title="Care Plan"
-          subtitle={carePlan.resident_name}
+          subtitle={residentName}
           showBack
           backHref={`/app/residents/${params.id}`}
         />
@@ -147,122 +189,180 @@ export default function CarePlanPage({ params }: { params: { id: string } }) {
       <Card className="mb-4" padding="md">
         <CardContent>
           <p className="text-gray-700">{summary}</p>
-          <div className="mt-4 flex items-center gap-4 border-t border-surface-100 pt-4 text-sm text-gray-500">
-            <div className="flex items-center gap-1">
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Chip variant="success" size="sm">
+              {(carePlan as any)?.status || "active"}
+            </Chip>
+            <Chip variant="default" size="sm">
+              Version {(carePlan as any)?.version || 1}
+            </Chip>
+          </div>
+
+          <div className="mt-4 grid gap-3 border-t border-surface-100 pt-4 text-sm text-gray-500">
+            <div className="flex items-center gap-2">
               <Calendar className="h-4 w-4" />
-              <span>Review: {reviewDate}</span>
+              <span>Review date: {reviewDate}</span>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
+              <Calendar className="h-4 w-4" />
+              <span>Published: {publishedAt}</span>
+            </div>
+            <div className="flex items-center gap-2">
               <User className="h-4 w-4" />
-              <span>Last reviewed: {lastReviewedAt}</span>
+              <span>Created: {createdAt}</span>
             </div>
           </div>
         </CardContent>
       </Card>
 
       <CollapsibleSection
-        title="Key Risks"
-        icon={<AlertTriangle className="h-5 w-5 text-care-red" />}
-        expanded={expandedSections.includes("risks")}
-        onToggle={() => toggleSection("risks")}
+        title="Dietary requirements"
+        sectionKey="dietary_requirements"
+        expanded={expandedSections.includes("dietary_requirements")}
+        onToggle={() => toggleSection("dietary_requirements")}
+      >
+        <p className="text-sm text-gray-700">
+          {getSectionContent(
+            sections,
+            "dietary_requirements",
+            "No dietary requirements recorded.",
+          )}
+        </p>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        title="Mobility"
+        sectionKey="mobility"
+        expanded={expandedSections.includes("mobility")}
+        onToggle={() => toggleSection("mobility")}
+      >
+        <p className="text-sm text-gray-700">
+          {getSectionContent(
+            sections,
+            "mobility",
+            "No mobility guidance recorded.",
+          )}
+        </p>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        title="Communication needs"
+        sectionKey="communication"
+        expanded={expandedSections.includes("communication")}
+        onToggle={() => toggleSection("communication")}
+      >
+        <p className="text-sm text-gray-700">
+          {getSectionContent(
+            sections,
+            "communication",
+            "No communication needs recorded.",
+          )}
+        </p>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        title="Medication support"
+        sectionKey="medication_support"
+        expanded={expandedSections.includes("medication_support")}
+        onToggle={() => toggleSection("medication_support")}
+      >
+        <p className="text-sm text-gray-700">
+          {getSectionContent(
+            sections,
+            "medication_support",
+            "No medication support guidance recorded.",
+          )}
+        </p>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        title="Personal care"
+        sectionKey="personal_care"
+        expanded={expandedSections.includes("personal_care")}
+        onToggle={() => toggleSection("personal_care")}
+      >
+        <p className="text-sm text-gray-700">
+          {getSectionContent(
+            sections,
+            "personal_care",
+            "No personal care guidance recorded.",
+          )}
+        </p>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        title="Behaviour support"
+        sectionKey="behaviour_support"
+        expanded={expandedSections.includes("behaviour_support")}
+        onToggle={() => toggleSection("behaviour_support")}
+      >
+        <p className="text-sm text-gray-700">
+          {getSectionContent(
+            sections,
+            "behaviour_support",
+            "No behaviour support guidance recorded.",
+          )}
+        </p>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        title="Risk notes"
+        sectionKey="risk_notes"
+        expanded={expandedSections.includes("risk_notes")}
+        onToggle={() => toggleSection("risk_notes")}
         badge={
           <Chip variant="danger" size="sm">
-            {keyRisks.length}
+            High attention
           </Chip>
         }
       >
-        {keyRisks.length > 0 ? (
-          <div className="space-y-3">
-            {keyRisks.map((risk, idx) => {
-              const riskLevel = String(risk.level || "").toLowerCase();
-              return (
-                <div key={idx} className="rounded-button bg-surface-50 p-3">
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="font-medium text-gray-900">
-                      {risk.type || "Risk"}
-                    </span>
-                    <Chip
-                      variant={riskLevel === "high" ? "danger" : "warning"}
-                      size="sm"
-                    >
-                      {risk.level || "Unknown"}
-                    </Chip>
-                  </div>
-                  <p className="mb-2 text-sm text-gray-600">
-                    {risk.description || "No description added."}
-                  </p>
-                  <div className="text-sm">
-                    <span className="text-gray-500">Mitigation: </span>
-                    <span className="text-gray-700">
-                      {risk.mitigation || "No mitigation recorded."}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="text-sm text-gray-500">No key risks recorded.</p>
-        )}
+        <div className="rounded-button bg-red-50 p-3">
+          <p className="text-sm text-gray-700">
+            {getSectionContent(
+              sections,
+              "risk_notes",
+              "No risk notes recorded.",
+            )}
+          </p>
+        </div>
       </CollapsibleSection>
 
       <CollapsibleSection
-        title="Key Needs"
-        icon={<Heart className="h-5 w-5 text-pink-500" />}
-        expanded={expandedSections.includes("needs")}
-        onToggle={() => toggleSection("needs")}
+        title="Care instructions"
+        sectionKey="care_instructions"
+        expanded={expandedSections.includes("care_instructions")}
+        onToggle={() => toggleSection("care_instructions")}
       >
-        {keyNeeds.length > 0 ? (
-          <div className="space-y-3">
-            {keyNeeds.map((need, idx) => (
-              <div key={idx} className="rounded-button bg-surface-50 p-3">
-                <span className="mb-1 block font-medium text-gray-900">
-                  {need.category || "Need"}
-                </span>
-                <p className="text-sm text-gray-600">
-                  {need.description || "No description added."}
-                </p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-gray-500">No key needs recorded.</p>
-        )}
+        <p className="text-sm text-gray-700">
+          {getSectionContent(
+            sections,
+            "care_instructions",
+            "No care instructions recorded.",
+          )}
+        </p>
       </CollapsibleSection>
 
       <CollapsibleSection
-        title="Goals"
-        icon={<Target className="h-5 w-5 text-primary-500" />}
-        expanded={expandedSections.includes("goals")}
-        onToggle={() => toggleSection("goals")}
+        title="Escalation guidance"
+        sectionKey="escalation_guidance"
+        expanded={expandedSections.includes("escalation_guidance")}
+        onToggle={() => toggleSection("escalation_guidance")}
+        badge={
+          <Chip variant="warning" size="sm">
+            Important
+          </Chip>
+        }
       >
-        {goals.length > 0 ? (
-          <div className="space-y-3">
-            {goals.map((goal, idx) => {
-              const status = String(goal.status || "").toLowerCase();
-              return (
-                <div key={idx} className="rounded-button bg-surface-50 p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="flex-1 text-gray-700">
-                      {goal.description || "No goal description added."}
-                    </p>
-                    <Chip
-                      variant={status === "on_track" ? "success" : "warning"}
-                      size="sm"
-                    >
-                      {status === "on_track" ? "On track" : "Attention"}
-                    </Chip>
-                  </div>
-                  <p className="mt-2 text-xs text-gray-500">
-                    Target: {safeFormatDate(goal.target_date)}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="text-sm text-gray-500">No goals recorded.</p>
-        )}
+        <div className="rounded-button bg-amber-50 p-3">
+          <p className="text-sm text-gray-700">
+            {getSectionContent(
+              sections,
+              "escalation_guidance",
+              "No escalation guidance recorded.",
+            )}
+          </p>
+        </div>
       </CollapsibleSection>
 
       <div className="mt-6">
@@ -296,27 +396,36 @@ export default function CarePlanPage({ params }: { params: { id: string } }) {
 
 function CollapsibleSection({
   title,
-  icon,
+  sectionKey,
   expanded,
   onToggle,
   badge,
   children,
 }: {
   title: string;
-  icon: React.ReactNode;
+  sectionKey: string;
   expanded: boolean;
   onToggle: () => void;
   badge?: React.ReactNode;
   children: React.ReactNode;
 }) {
+  const isRisk = sectionKey === "risk_notes";
+
   return (
-    <Card className="mb-4" padding="none">
+    <Card
+      className={`mb-4 ${isRisk ? "border-care-red/20" : ""}`}
+      padding="none"
+    >
       <button
         onClick={onToggle}
         className="flex w-full items-center justify-between p-4"
       >
         <div className="flex items-center gap-3">
-          {icon}
+          {isRisk ? (
+            <AlertTriangle className="h-5 w-5 text-care-red" />
+          ) : (
+            <FileText className="h-5 w-5 text-primary-500" />
+          )}
           <span className="font-semibold text-gray-900">{title}</span>
           {badge}
         </div>
