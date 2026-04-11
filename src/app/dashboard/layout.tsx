@@ -34,6 +34,7 @@ const navItems: NavItem[] = [
     label: "Tasks",
     roles: ["admin", "manager"],
   },
+  { href: "/dashboard/incidents", icon: UserCog, label: "Incidents" },
   {
     href: "/dashboard/policies",
     icon: ScrollText,
