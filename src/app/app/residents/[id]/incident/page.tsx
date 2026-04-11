@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Chip } from "@/components/ui/chip";
 import { createClient } from "@/lib/supabase/client";
-import { useAuthStore } from "@/lib/stores/auth-store";
 import type { IncidentSeverity } from "@/lib/database.types";
 
 const INCIDENT_TYPES = [
@@ -56,13 +55,18 @@ const SEVERITY_OPTIONS: {
   },
 ];
 
+type CurrentUserProfile = {
+  id: string;
+  organisation_id: string | null;
+  full_name: string | null;
+};
+
 export default function IncidentReportPage({
   params,
 }: {
   params: { id: string };
 }) {
   const router = useRouter();
-  const { user } = useAuthStore();
 
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -88,16 +92,36 @@ export default function IncidentReportPage({
   };
 
   const handleSubmit = async () => {
-    if (!user?.id || !user.organisation_id) {
-      setSubmitError("You must be signed in to submit an incident.");
-      return;
-    }
-
     setIsSubmitting(true);
     setSubmitError(null);
 
     try {
       const supabase = createClient();
+
+      const {
+        data: { user: authUser },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !authUser) {
+        throw new Error("You must be signed in to submit an incident.");
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from("users")
+        .select("id, organisation_id, full_name")
+        .eq("id", authUser.id)
+        .single();
+
+      if (profileError || !profile) {
+        throw new Error("Could not load your user profile.");
+      }
+
+      const currentUser = profile as CurrentUserProfile;
+
+      if (!currentUser.organisation_id) {
+        throw new Error("No organisation is linked to your account.");
+      }
 
       const cleanedWitnesses = witnesses
         .split(",")
@@ -105,9 +129,9 @@ export default function IncidentReportPage({
         .filter(Boolean);
 
       const payload = {
-        organisation_id: user.organisation_id,
+        organisation_id: currentUser.organisation_id,
         resident_id: params.id,
-        reported_by: user.id,
+        reported_by: currentUser.id,
         incident_type: incidentType,
         severity,
         description: description.trim(),
@@ -118,9 +142,17 @@ export default function IncidentReportPage({
         follow_up_required: followUpRequired,
       };
 
-      const { error } = await supabase.from("incidents").insert(payload);
+      const { data: insertedIncident, error: insertError } = await supabase
+        .from("incidents")
+        .insert(payload)
+        .select("id, organisation_id, resident_id, incident_type, occurred_at")
+        .single();
 
-      if (error) throw error;
+      if (insertError) {
+        throw insertError;
+      }
+
+      console.log("Incident inserted successfully:", insertedIncident);
 
       setShowSuccess(true);
 
