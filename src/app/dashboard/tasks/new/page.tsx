@@ -8,8 +8,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
-import { useAuth } from "@/lib/hooks/use-auth";
-import { useRequireManager } from "@/lib/hooks/use-auth";
+import { useAuth, useRequireManager } from "@/lib/hooks/use-auth";
 import type {
   TaskInsert,
   TaskPriority,
@@ -22,6 +21,11 @@ type FormErrors = {
   title?: string;
   due_at?: string;
   general?: string;
+};
+
+type TaskTypeOption = {
+  value: string;
+  label: string;
 };
 
 const PRIORITY_OPTIONS: {
@@ -51,7 +55,7 @@ const PRIORITY_OPTIONS: {
   },
 ];
 
-const TASK_TYPES = [
+const TASK_TYPES: TaskTypeOption[] = [
   { value: "", label: "General task" },
   { value: "medication", label: "Medication" },
   { value: "personal_care", label: "Personal care" },
@@ -59,7 +63,7 @@ const TASK_TYPES = [
   { value: "mobility", label: "Mobility support" },
   { value: "observation", label: "Observation" },
   { value: "appointment", label: "Appointment" },
-  { value: "admin", label: "Administrative" },
+  { value: "administrative", label: "Administrative" },
 ];
 
 function asObject(value: Json | null | undefined): Record<string, any> {
@@ -88,6 +92,35 @@ function getDefaultPriorityFromOrganisation(
   }
 
   return "medium";
+}
+
+function normalizeTaskType(value: string): string | null {
+  if (!value) return null;
+
+  const aliases: Record<string, string> = {
+    admin: "administrative",
+    Administrative: "administrative",
+    "personal care": "personal_care",
+    personalcare: "personal_care",
+    "meal assistance": "meal",
+    meals: "meal",
+    observations: "observation",
+    mobility_support: "mobility",
+  };
+
+  const normalized = aliases[value] ?? value;
+
+  const allowed = new Set([
+    "medication",
+    "personal_care",
+    "meal",
+    "mobility",
+    "observation",
+    "appointment",
+    "administrative",
+  ]);
+
+  return allowed.has(normalized) ? normalized : null;
 }
 
 export default function NewTaskPage() {
@@ -206,13 +239,14 @@ export default function NewTaskPage() {
     try {
       const supabase = createClient();
       const dueAt = new Date(`${dueDate}T${dueTime}:00`).toISOString();
+      const normalizedTaskType = normalizeTaskType(taskType);
 
       const taskData: TaskInsert = {
         organisation_id: organisation.id,
         created_by: user.id,
         title: title.trim(),
         description: description.trim() || null,
-        task_type: taskType || null,
+        task_type: normalizedTaskType,
         priority,
         status: "pending",
         resident_id: residentId || null,
@@ -232,11 +266,16 @@ export default function NewTaskPage() {
       }, 1500);
     } catch (err) {
       console.error("Failed to create task:", err);
+
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Unable to create task. Please try again.";
+
       setErrors({
-        general:
-          err instanceof Error
-            ? err.message
-            : "Unable to create task. Please try again.",
+        general: message.includes("tasks_task_type_check")
+          ? "This task type is not accepted by the database yet. Please choose another type or update the task_type constraint."
+          : message,
       });
     } finally {
       setIsSubmitting(false);
