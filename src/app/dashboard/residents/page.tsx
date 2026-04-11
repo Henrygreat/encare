@@ -51,9 +51,11 @@ function getResidentListView(
 
 function getRiskLevel(riskFlags: Json): "low" | "medium" | "high" {
   if (!Array.isArray(riskFlags) || riskFlags.length === 0) return "low";
+
   const hasHigh = riskFlags.some(
     (flag: any) => flag?.severity === "high" || flag?.priority === "high",
   );
+
   if (hasHigh) return "high";
   if (riskFlags.length >= 2) return "medium";
   return "low";
@@ -82,6 +84,7 @@ export default function ResidentsManagementPage() {
   useEffect(() => {
     async function loadResidents() {
       if (!organisation?.id) return;
+
       setIsLoading(true);
       setError(null);
 
@@ -135,9 +138,16 @@ export default function ResidentsManagementPage() {
             count: 0,
             lastLogAt: null,
           };
+
+          const nextLastLogAt =
+            !current.lastLogAt ||
+            new Date(log.logged_at) > new Date(current.lastLogAt)
+              ? log.logged_at
+              : current.lastLogAt;
+
           logsByResident.set(log.resident_id, {
             count: current.count + 1,
-            lastLogAt: current.lastLogAt || log.logged_at,
+            lastLogAt: nextLastLogAt,
           });
         }
 
@@ -188,14 +198,17 @@ export default function ResidentsManagementPage() {
 
   const handleArchive = async (residentId: string) => {
     if (!organisation?.id) return;
+
     if (
       !window.confirm(
         "Archive this resident? Their record will remain available but marked inactive.",
       )
-    )
+    ) {
       return;
+    }
 
     const previousResidents = residents;
+
     setArchivingId(residentId);
     setResidents((current) =>
       current.map((resident) =>
@@ -304,6 +317,7 @@ export default function ResidentsManagementPage() {
               one calm workspace.
             </p>
           </div>
+
           <div className="flex flex-wrap gap-3">
             <Link href="/dashboard/residents/new">
               <Button
@@ -314,6 +328,7 @@ export default function ResidentsManagementPage() {
                 Add resident
               </Button>
             </Link>
+
             <Link href="/dashboard/import">
               <Button
                 variant="secondary"
@@ -323,6 +338,7 @@ export default function ResidentsManagementPage() {
                 Import
               </Button>
             </Link>
+
             <Link href="/app/residents">
               <Button
                 variant="secondary"
@@ -374,6 +390,7 @@ export default function ResidentsManagementPage() {
               className="pl-9"
             />
           </div>
+
           <div className="flex flex-wrap items-center gap-2">
             <Filter className="h-4 w-4 text-slate-400" />
             <FilterSelect
@@ -596,6 +613,7 @@ export default function ResidentsManagementPage() {
                       ) : null}
                     </div>
                   </Link>
+
                   <div className="flex shrink-0 flex-col gap-2">
                     <Link href={`/dashboard/residents/${resident.id}/edit`}>
                       <Button variant="outline" size="sm">
