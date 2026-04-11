@@ -17,6 +17,7 @@ export type ImportStatus = 'pending' | 'validating' | 'validated' | 'importing' 
 export type ImportRowStatus = 'pending' | 'valid' | 'invalid' | 'imported' | 'skipped' | 'failed'
 export type ImportEntityType = 'residents' | 'staff' | 'tasks' | 'care_plans'
 export type PolicyStatus = 'draft' | 'published' | 'archived'
+export type CarePlanStatus = 'draft' | 'active' | 'archived'
 
 export interface Database {
   public: {
@@ -192,51 +193,111 @@ export interface Database {
       care_plans: {
         Row: {
           id: string
+          organisation_id: string
           resident_id: string
           title: string
           summary: string | null
-          key_needs: Json
-          key_risks: Json
-          goals: Json
-          interventions: Json
+          status: CarePlanStatus
+          version: number
           review_date: string | null
-          last_reviewed_at: string | null
-          reviewed_by: string | null
-          is_active: boolean
+          next_review_date: string | null
+          published_at: string | null
+          created_by: string | null
+          updated_by: string | null
           created_at: string
           updated_at: string
         }
         Insert: {
           id?: string
+          organisation_id: string
           resident_id: string
-          title: string
+          title?: string
           summary?: string | null
-          key_needs?: Json
-          key_risks?: Json
-          goals?: Json
-          interventions?: Json
+          status?: CarePlanStatus
+          version?: number
           review_date?: string | null
-          last_reviewed_at?: string | null
-          reviewed_by?: string | null
-          is_active?: boolean
+          next_review_date?: string | null
+          published_at?: string | null
+          created_by?: string | null
+          updated_by?: string | null
           created_at?: string
           updated_at?: string
         }
         Update: {
           id?: string
+          organisation_id?: string
           resident_id?: string
           title?: string
           summary?: string | null
-          key_needs?: Json
-          key_risks?: Json
-          goals?: Json
-          interventions?: Json
+          status?: CarePlanStatus
+          version?: number
           review_date?: string | null
-          last_reviewed_at?: string | null
-          reviewed_by?: string | null
-          is_active?: boolean
+          next_review_date?: string | null
+          published_at?: string | null
+          created_by?: string | null
+          updated_by?: string | null
           created_at?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      care_plan_sections: {
+        Row: {
+          id: string
+          care_plan_id: string
+          section_key: string
+          section_label: string
+          content: string | null
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          care_plan_id: string
+          section_key: string
+          section_label: string
+          content?: string | null
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          care_plan_id?: string
+          section_key?: string
+          section_label?: string
+          content?: string | null
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      care_plan_audit_logs: {
+        Row: {
+          id: string
+          care_plan_id: string
+          action: string
+          actor_id: string | null
+          details: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          care_plan_id: string
+          action: string
+          actor_id?: string | null
+          details?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          care_plan_id?: string
+          action?: string
+          actor_id?: string | null
+          details?: Json
+          created_at?: string
         }
         Relationships: []
       }
@@ -1025,6 +1086,13 @@ export type User = Database['public']['Tables']['users']['Row']
 export type Resident = Database['public']['Tables']['residents']['Row']
 export type StaffAssignment = Database['public']['Tables']['staff_assignments']['Row']
 export type CarePlan = Database['public']['Tables']['care_plans']['Row']
+export type CarePlanInsert = Database['public']['Tables']['care_plans']['Insert']
+export type CarePlanUpdate = Database['public']['Tables']['care_plans']['Update']
+export type CarePlanSection = Database['public']['Tables']['care_plan_sections']['Row']
+export type CarePlanSectionInsert = Database['public']['Tables']['care_plan_sections']['Insert']
+export type CarePlanSectionUpdate = Database['public']['Tables']['care_plan_sections']['Update']
+export type CarePlanAuditLog = Database['public']['Tables']['care_plan_audit_logs']['Row']
+export type CarePlanAuditLogInsert = Database['public']['Tables']['care_plan_audit_logs']['Insert']
 export type Task = Database['public']['Tables']['tasks']['Row']
 export type DailyLog = Database['public']['Tables']['daily_logs']['Row']
 export type Incident = Database['public']['Tables']['incidents']['Row']

@@ -5,7 +5,20 @@ export { useAuth, useRequireAuth, useRequireManager } from './use-auth'
 export { useResidents, useResident, type ResidentWithStatus } from './use-residents'
 export { useTasks, useTaskActions, type TaskWithResident } from './use-tasks'
 export { useResidentTimeline, useCreateLog, useTodayLogs, type TimelineEventWithUser } from './use-logs'
-export { useCarePlan, useMarkCarePlanViewed, type CarePlanWithResident } from './use-care-plans'
+export {
+  useCarePlan,
+  useCarePlanById,
+  useCarePlanVersions,
+  useDraftCarePlan,
+  useCarePlanAuditLogs,
+  useCarePlanActions,
+  useMarkCarePlanViewed,
+  DEFAULT_CARE_PLAN_SECTIONS,
+  HIGHLIGHTED_SECTIONS,
+  type CarePlanWithResident,
+  type CarePlanWithSections,
+  type CarePlanVersionSummary,
+} from './use-care-plans'
 export { useTodayHandover, usePreviousHandovers, useHandoverActions, type HandoverWithSummary } from './use-handover'
 export { useDashboard, type DashboardStats } from './use-dashboard'
 
