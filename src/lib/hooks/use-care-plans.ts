@@ -5,16 +5,12 @@ import { createClient } from '@/lib/supabase/client'
 import { useAuthStore } from '@/lib/stores/auth-store'
 import type {
   CarePlan,
-  CarePlanInsert,
   CarePlanUpdate,
   CarePlanSection,
-  CarePlanSectionUpdate,
   CarePlanAuditLog,
   CarePlanStatus,
-  User,
 } from '@/lib/database.types'
 
-// Default section configuration
 export const DEFAULT_CARE_PLAN_SECTIONS = [
   { key: 'dietary_requirements', label: 'Dietary Requirements', sortOrder: 1 },
   { key: 'mobility', label: 'Mobility', sortOrder: 2 },
@@ -27,10 +23,46 @@ export const DEFAULT_CARE_PLAN_SECTIONS = [
   { key: 'escalation_guidance', label: 'Escalation Guidance', sortOrder: 9 },
 ] as const
 
-// Sections that should be highlighted (risk-related)
 export const HIGHLIGHTED_SECTIONS = ['risk_notes', 'escalation_guidance'] as const
 
-// Extended types
+type ResidentRelation = {
+  first_name?: string | null
+  last_name?: string | null
+  preferred_name?: string | null
+}
+
+type UserRelation = {
+  full_name?: string | null
+}
+
+type CarePlanSectionRow = {
+  id: string
+  section_key: string | null
+  section_label: string | null
+  content: string | null
+  sort_order: number | null
+}
+
+type CarePlanRowWithRelations = CarePlan & {
+  residents?: ResidentRelation | ResidentRelation[] | null
+  care_plan_sections?: CarePlanSectionRow[] | null
+  creator?: UserRelation | UserRelation[] | null
+  updater?: UserRelation | UserRelation[] | null
+}
+
+type CarePlanVersionRow = {
+  id: string
+  version: number
+  status: CarePlanStatus
+  published_at: string | null
+  created_at: string
+  creator?: UserRelation | UserRelation[] | null
+}
+
+type CarePlanAuditLogRow = CarePlanAuditLog & {
+  actor?: UserRelation | UserRelation[] | null
+}
+
 export interface CarePlanWithSections extends CarePlan {
   sections: CarePlanSection[]
   resident_name?: string
@@ -53,6 +85,38 @@ export interface CarePlanVersionSummary {
   created_by_name?: string
 }
 
+function pickSingleRelation<T>(value: T | T[] | null | undefined): T | undefined {
+  if (Array.isArray(value)) return value[0]
+  return value ?? undefined
+}
+
+function buildResidentName(resident?: ResidentRelation): string | undefined {
+  if (!resident) return undefined
+
+  const first = resident.preferred_name || resident.first_name || ''
+  const last = resident.last_name || ''
+  const full = `${first} ${last}`.trim()
+
+  return full || undefined
+}
+
+function normalizeSections(
+  sections: CarePlanSectionRow[] | null | undefined
+): CarePlanSection[] {
+  return (sections || [])
+    .map(
+      (section) =>
+        ({
+          id: section.id,
+          section_key: section.section_key ?? '',
+          section_label: section.section_label ?? '',
+          content: section.content ?? null,
+          sort_order: section.sort_order ?? 0,
+        }) as CarePlanSection
+    )
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+}
+
 // =======================
 // GET ACTIVE CARE PLAN FOR A RESIDENT
 // =======================
@@ -64,7 +128,11 @@ export function useCarePlan(residentId: string) {
   const { user } = useAuthStore()
 
   const fetchCarePlan = useCallback(async () => {
-    if (!residentId) return
+    if (!residentId) {
+      setCarePlan(null)
+      setIsLoading(false)
+      return
+    }
 
     setIsLoading(true)
     setError(null)
@@ -72,8 +140,7 @@ export function useCarePlan(residentId: string) {
     try {
       const supabase = createClient()
 
-      // Fetch active care plan with resident info and sections
-      const { data: carePlanData, error: carePlanError } = await supabase
+      const { data, error: carePlanError } = await supabase
         .from('care_plans')
         .select(`
           *,
@@ -96,44 +163,36 @@ export function useCarePlan(residentId: string) {
         .limit(1)
         .maybeSingle()
 
-      if (carePlanError) {
-        throw carePlanError
-      }
+      if (carePlanError) throw carePlanError
 
-      if (!carePlanData) {
+      if (!data) {
         setCarePlan(null)
         return
       }
 
-      // Check if current user has viewed this care plan
+      const typedData = data as unknown as CarePlanRowWithRelations
+
       let hasViewed = false
+
       if (user?.id) {
-        const { data: viewData } = await supabase
+        const { data: viewData, error: viewError } = await supabase
           .from('care_plan_views')
           .select('id')
-          .eq('care_plan_id', carePlanData.id)
+          .eq('care_plan_id', typedData.id)
           .eq('user_id', user.id)
           .limit(1)
 
-        hasViewed = (viewData && viewData.length > 0) || false
+        if (!viewError) {
+          hasViewed = (viewData?.length || 0) > 0
+        }
       }
 
-      const resident = Array.isArray(carePlanData.residents)
-        ? carePlanData.residents[0]
-        : carePlanData.residents
-
-      const residentName = resident
-        ? `${resident.preferred_name || resident.first_name} ${resident.last_name}`
-        : undefined
-
-      // Sort sections by sort_order
-      const sections = (carePlanData.care_plan_sections || []).sort(
-        (a: CarePlanSection, b: CarePlanSection) => a.sort_order - b.sort_order
-      )
+      const resident = pickSingleRelation(typedData.residents)
+      const sections = normalizeSections(typedData.care_plan_sections)
 
       setCarePlan({
-        ...carePlanData,
-        resident_name: residentName,
+        ...typedData,
+        resident_name: buildResidentName(resident),
         has_viewed: hasViewed,
         sections,
       })
@@ -197,28 +256,27 @@ export function useCarePlanById(carePlanId: string | null) {
           )
         `)
         .eq('id', carePlanId)
-        .single()
+        .maybeSingle()
 
       if (fetchError) throw fetchError
 
-      const resident = Array.isArray(data.residents)
-        ? data.residents[0]
-        : data.residents
+      if (!data) {
+        setCarePlan(null)
+        return
+      }
 
-      const residentName = resident
-        ? `${resident.preferred_name || resident.first_name} ${resident.last_name}`
-        : undefined
-
-      const sections = (data.care_plan_sections || []).sort(
-        (a: CarePlanSection, b: CarePlanSection) => a.sort_order - b.sort_order
-      )
+      const typedData = data as unknown as CarePlanRowWithRelations
+      const resident = pickSingleRelation(typedData.residents)
+      const creator = pickSingleRelation(typedData.creator)
+      const updater = pickSingleRelation(typedData.updater)
+      const sections = normalizeSections(typedData.care_plan_sections)
 
       setCarePlan({
-        ...data,
+        ...typedData,
         sections,
-        resident_name: residentName,
-        created_by_name: (data.creator as any)?.full_name || undefined,
-        updated_by_name: (data.updater as any)?.full_name || undefined,
+        resident_name: buildResidentName(resident),
+        created_by_name: creator?.full_name || undefined,
+        updated_by_name: updater?.full_name || undefined,
       })
     } catch (err) {
       setError(err instanceof Error ? err : new Error('Failed to fetch care plan'))
@@ -273,15 +331,21 @@ export function useCarePlanVersions(residentId: string) {
 
       if (fetchError) throw fetchError
 
+      const rows = (data || []) as CarePlanVersionRow[]
+
       setVersions(
-        (data || []).map((v: any) => ({
-          id: v.id,
-          version: v.version,
-          status: v.status as CarePlanStatus,
-          published_at: v.published_at,
-          created_at: v.created_at,
-          created_by_name: (v.creator as any)?.full_name || undefined,
-        }))
+        rows.map((row) => {
+          const creator = pickSingleRelation(row.creator)
+
+          return {
+            id: row.id,
+            version: row.version,
+            status: row.status,
+            published_at: row.published_at,
+            created_at: row.created_at,
+            created_by_name: creator?.full_name || undefined,
+          }
+        })
       )
     } catch (err) {
       setError(err instanceof Error ? err : new Error('Failed to fetch versions'))
@@ -349,22 +413,14 @@ export function useDraftCarePlan(residentId: string) {
         return
       }
 
-      const resident = Array.isArray(data.residents)
-        ? data.residents[0]
-        : data.residents
-
-      const residentName = resident
-        ? `${resident.preferred_name || resident.first_name} ${resident.last_name}`
-        : undefined
-
-      const sections = (data.care_plan_sections || []).sort(
-        (a: CarePlanSection, b: CarePlanSection) => a.sort_order - b.sort_order
-      )
+      const typedData = data as unknown as CarePlanRowWithRelations
+      const resident = pickSingleRelation(typedData.residents)
+      const sections = normalizeSections(typedData.care_plan_sections)
 
       setCarePlan({
-        ...data,
+        ...typedData,
         sections,
-        resident_name: residentName,
+        resident_name: buildResidentName(resident),
       })
     } catch (err) {
       setError(err instanceof Error ? err : new Error('Failed to fetch draft'))
@@ -385,7 +441,7 @@ export function useDraftCarePlan(residentId: string) {
 // =======================
 
 export function useCarePlanAuditLogs(carePlanId: string | null) {
-  const [logs, setLogs] = useState<(CarePlanAuditLog & { actor_name?: string })[]>([])
+  const [logs, setLogs] = useState<Array<CarePlanAuditLog & { actor_name?: string }>>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
 
@@ -416,11 +472,17 @@ export function useCarePlanAuditLogs(carePlanId: string | null) {
 
       if (fetchError) throw fetchError
 
+      const rows = (data || []) as CarePlanAuditLogRow[]
+
       setLogs(
-        (data || []).map((log: any) => ({
-          ...log,
-          actor_name: (log.actor as any)?.full_name || undefined,
-        }))
+        rows.map((row) => {
+          const actor = pickSingleRelation(row.actor)
+
+          return {
+            ...row,
+            actor_name: actor?.full_name || undefined,
+          }
+        })
       )
     } catch (err) {
       setError(err instanceof Error ? err : new Error('Failed to fetch audit logs'))
@@ -443,13 +505,13 @@ export function useCarePlanAuditLogs(carePlanId: string | null) {
 export function useCarePlanActions() {
   const [isLoading, setIsLoading] = useState(false)
 
-  // Create a new draft care plan
   const createDraftCarePlan = useCallback(
     async (
       residentId: string,
       data?: { title?: string; summary?: string; review_date?: string; next_review_date?: string }
     ): Promise<{ carePlan: CarePlan | null; error?: string }> => {
       setIsLoading(true)
+
       try {
         const supabase = createClient()
 
@@ -459,30 +521,28 @@ export function useCarePlanActions() {
 
         if (!user) throw new Error('Not authenticated')
 
-        const { data: profile } = await supabase
+        const { data: profile, error: profileError } = await supabase
           .from('users')
           .select('organisation_id')
           .eq('id', user.id)
           .single()
 
-        if (!profile?.organisation_id) {
-          throw new Error('No organisation found')
-        }
+        if (profileError) throw profileError
+        if (!profile?.organisation_id) throw new Error('No organisation found')
 
-        // Check for existing draft
-        const { data: existingDraft } = await supabase
+        const { data: existingDraft, error: existingDraftError } = await supabase
           .from('care_plans')
           .select('id')
           .eq('resident_id', residentId)
           .eq('status', 'draft')
           .maybeSingle()
 
+        if (existingDraftError) throw existingDraftError
         if (existingDraft) {
           throw new Error('A draft care plan already exists for this resident')
         }
 
-        // Get the latest version number
-        const { data: latestVersion } = await supabase
+        const { data: latestVersion, error: latestVersionError } = await supabase
           .from('care_plans')
           .select('version')
           .eq('resident_id', residentId)
@@ -490,9 +550,10 @@ export function useCarePlanActions() {
           .limit(1)
           .maybeSingle()
 
+        if (latestVersionError) throw latestVersionError
+
         const newVersion = (latestVersion?.version || 0) + 1
 
-        // Create the care plan
         const { data: newCarePlan, error: insertError } = await supabase
           .from('care_plans')
           .insert({
@@ -512,11 +573,11 @@ export function useCarePlanActions() {
 
         if (insertError) throw insertError
 
-        // Create default sections
         const sectionsToInsert = DEFAULT_CARE_PLAN_SECTIONS.map((section) => ({
           care_plan_id: newCarePlan.id,
           section_key: section.key,
           section_label: section.label,
+          section_type: section.key,
           sort_order: section.sortOrder,
           content: null,
         }))
@@ -527,17 +588,21 @@ export function useCarePlanActions() {
 
         if (sectionsError) throw sectionsError
 
-        // Create audit log
-        await supabase.from('care_plan_audit_logs').insert({
-          care_plan_id: newCarePlan.id,
-          action: 'created',
-          actor_id: user.id,
-          details: { version: newVersion },
-        })
+        const { error: auditError } = await supabase
+          .from('care_plan_audit_logs')
+          .insert({
+            care_plan_id: newCarePlan.id,
+            action: 'created',
+            actor_id: user.id,
+            details: { version: newVersion },
+          })
 
-        return { carePlan: newCarePlan }
+        if (auditError) throw auditError
+
+        return { carePlan: newCarePlan as CarePlan }
       } catch (err) {
         console.error('Failed to create care plan:', err)
+
         return {
           carePlan: null,
           error: err instanceof Error ? err.message : 'Failed to create care plan',
@@ -549,13 +614,13 @@ export function useCarePlanActions() {
     []
   )
 
-  // Update care plan details
   const updateCarePlan = useCallback(
     async (
       carePlanId: string,
       data: CarePlanUpdate
     ): Promise<{ success: boolean; error?: string }> => {
       setIsLoading(true)
+
       try {
         const supabase = createClient()
 
@@ -575,17 +640,21 @@ export function useCarePlanActions() {
 
         if (updateError) throw updateError
 
-        // Create audit log
-        await supabase.from('care_plan_audit_logs').insert({
-          care_plan_id: carePlanId,
-          action: 'updated',
-          actor_id: user.id,
-          details: { fields: Object.keys(data) },
-        })
+        const { error: auditError } = await supabase
+          .from('care_plan_audit_logs')
+          .insert({
+            care_plan_id: carePlanId,
+            action: 'updated',
+            actor_id: user.id,
+            details: { fields: Object.keys(data) },
+          })
+
+        if (auditError) throw auditError
 
         return { success: true }
       } catch (err) {
         console.error('Failed to update care plan:', err)
+
         return {
           success: false,
           error: err instanceof Error ? err.message : 'Failed to update care plan',
@@ -597,7 +666,6 @@ export function useCarePlanActions() {
     []
   )
 
-  // Update a section
   const updateSection = useCallback(
     async (
       sectionId: string,
@@ -605,6 +673,7 @@ export function useCarePlanActions() {
       content: string | null
     ): Promise<{ success: boolean; error?: string }> => {
       setIsLoading(true)
+
       try {
         const supabase = createClient()
 
@@ -614,12 +683,13 @@ export function useCarePlanActions() {
 
         if (!user) throw new Error('Not authenticated')
 
-        // Get section info for audit
-        const { data: section } = await supabase
+        const { data: section, error: sectionError } = await supabase
           .from('care_plan_sections')
           .select('section_key, section_label')
           .eq('id', sectionId)
           .single()
+
+        if (sectionError) throw sectionError
 
         const { error: updateError } = await supabase
           .from('care_plan_sections')
@@ -628,26 +698,31 @@ export function useCarePlanActions() {
 
         if (updateError) throw updateError
 
-        // Update the care plan's updated_by and updated_at
-        await supabase
+        const { error: touchPlanError } = await supabase
           .from('care_plans')
           .update({ updated_by: user.id })
           .eq('id', carePlanId)
 
-        // Create audit log
-        await supabase.from('care_plan_audit_logs').insert({
-          care_plan_id: carePlanId,
-          action: 'section_updated',
-          actor_id: user.id,
-          details: {
-            section_key: section?.section_key,
-            section_label: section?.section_label,
-          },
-        })
+        if (touchPlanError) throw touchPlanError
+
+        const { error: auditError } = await supabase
+          .from('care_plan_audit_logs')
+          .insert({
+            care_plan_id: carePlanId,
+            action: 'updated',
+            actor_id: user.id,
+            details: {
+              section_key: section?.section_key,
+              section_label: section?.section_label,
+            },
+          })
+
+        if (auditError) throw auditError
 
         return { success: true }
       } catch (err) {
         console.error('Failed to update section:', err)
+
         return {
           success: false,
           error: err instanceof Error ? err.message : 'Failed to update section',
@@ -659,13 +734,13 @@ export function useCarePlanActions() {
     []
   )
 
-  // Bulk update sections
   const updateSections = useCallback(
     async (
       carePlanId: string,
       updates: Array<{ id: string; content: string | null }>
     ): Promise<{ success: boolean; error?: string }> => {
       setIsLoading(true)
+
       try {
         const supabase = createClient()
 
@@ -675,7 +750,6 @@ export function useCarePlanActions() {
 
         if (!user) throw new Error('Not authenticated')
 
-        // Update all sections
         for (const update of updates) {
           const { error: updateError } = await supabase
             .from('care_plan_sections')
@@ -685,23 +759,28 @@ export function useCarePlanActions() {
           if (updateError) throw updateError
         }
 
-        // Update the care plan's updated_by
-        await supabase
+        const { error: touchPlanError } = await supabase
           .from('care_plans')
           .update({ updated_by: user.id })
           .eq('id', carePlanId)
 
-        // Create audit log
-        await supabase.from('care_plan_audit_logs').insert({
-          care_plan_id: carePlanId,
-          action: 'sections_updated',
-          actor_id: user.id,
-          details: { sections_count: updates.length },
-        })
+        if (touchPlanError) throw touchPlanError
+
+        const { error: auditError } = await supabase
+          .from('care_plan_audit_logs')
+          .insert({
+            care_plan_id: carePlanId,
+            action: 'updated',
+            actor_id: user.id,
+            details: { sections_count: updates.length },
+          })
+
+        if (auditError) throw auditError
 
         return { success: true }
       } catch (err) {
         console.error('Failed to update sections:', err)
+
         return {
           success: false,
           error: err instanceof Error ? err.message : 'Failed to update sections',
@@ -713,10 +792,10 @@ export function useCarePlanActions() {
     []
   )
 
-  // Publish care plan
   const publishCarePlan = useCallback(
     async (carePlanId: string): Promise<{ success: boolean; error?: string }> => {
       setIsLoading(true)
+
       try {
         const supabase = createClient()
 
@@ -726,18 +805,17 @@ export function useCarePlanActions() {
 
         if (!user) throw new Error('Not authenticated')
 
-        // Get the care plan to verify it's a draft and get resident_id
-        const { data: carePlan } = await supabase
+        const { data: carePlan, error: carePlanError } = await supabase
           .from('care_plans')
           .select('id, status, resident_id')
           .eq('id', carePlanId)
           .single()
 
+        if (carePlanError) throw carePlanError
         if (!carePlan) throw new Error('Care plan not found')
         if (carePlan.status !== 'draft') throw new Error('Only draft care plans can be published')
 
-        // Archive any existing active care plan for this resident
-        await supabase
+        const { error: archiveExistingError } = await supabase
           .from('care_plans')
           .update({
             status: 'archived',
@@ -746,7 +824,8 @@ export function useCarePlanActions() {
           .eq('resident_id', carePlan.resident_id)
           .eq('status', 'active')
 
-        // Publish the new care plan
+        if (archiveExistingError) throw archiveExistingError
+
         const { error: publishError } = await supabase
           .from('care_plans')
           .update({
@@ -758,17 +837,21 @@ export function useCarePlanActions() {
 
         if (publishError) throw publishError
 
-        // Create audit log
-        await supabase.from('care_plan_audit_logs').insert({
-          care_plan_id: carePlanId,
-          action: 'published',
-          actor_id: user.id,
-          details: {},
-        })
+        const { error: auditError } = await supabase
+          .from('care_plan_audit_logs')
+          .insert({
+            care_plan_id: carePlanId,
+            action: 'published',
+            actor_id: user.id,
+            details: {},
+          })
+
+        if (auditError) throw auditError
 
         return { success: true }
       } catch (err) {
         console.error('Failed to publish care plan:', err)
+
         return {
           success: false,
           error: err instanceof Error ? err.message : 'Failed to publish care plan',
@@ -780,10 +863,10 @@ export function useCarePlanActions() {
     []
   )
 
-  // Archive care plan
   const archiveCarePlan = useCallback(
     async (carePlanId: string): Promise<{ success: boolean; error?: string }> => {
       setIsLoading(true)
+
       try {
         const supabase = createClient()
 
@@ -803,17 +886,21 @@ export function useCarePlanActions() {
 
         if (archiveError) throw archiveError
 
-        // Create audit log
-        await supabase.from('care_plan_audit_logs').insert({
-          care_plan_id: carePlanId,
-          action: 'archived',
-          actor_id: user.id,
-          details: {},
-        })
+        const { error: auditError } = await supabase
+          .from('care_plan_audit_logs')
+          .insert({
+            care_plan_id: carePlanId,
+            action: 'archived',
+            actor_id: user.id,
+            details: {},
+          })
+
+        if (auditError) throw auditError
 
         return { success: true }
       } catch (err) {
         console.error('Failed to archive care plan:', err)
+
         return {
           success: false,
           error: err instanceof Error ? err.message : 'Failed to archive care plan',
@@ -855,31 +942,33 @@ export function useMarkCarePlanViewed() {
       try {
         const supabase = createClient()
 
-        // Check if already viewed
-        const { data: existing } = await supabase
+        const { data: existing, error: existingError } = await supabase
           .from('care_plan_views')
           .select('id')
           .eq('care_plan_id', carePlanId)
           .eq('user_id', user.id)
           .limit(1)
 
+        if (existingError) throw existingError
+
         if (existing && existing.length > 0) {
-          // Already viewed
           return { success: true }
         }
 
-        // Insert view record
-        const { error } = await supabase.from('care_plan_views').insert({
-          care_plan_id: carePlanId,
-          user_id: user.id,
-          viewed_at: new Date().toISOString(),
-        })
+        const { error } = await supabase
+          .from('care_plan_views')
+          .insert({
+            care_plan_id: carePlanId,
+            user_id: user.id,
+            viewed_at: new Date().toISOString(),
+          })
 
         if (error) throw error
 
         return { success: true }
       } catch (err) {
         console.error('Failed to mark care plan as viewed:', err)
+
         return {
           success: false,
           error: err instanceof Error ? err.message : 'Failed to record view',
