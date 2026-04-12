@@ -4,18 +4,26 @@ import { useState } from "react";
 import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { PLANS, isTrialEnabled, getTrialDays } from "@/lib/stripe/plans";
+import {
+  PLANS,
+  type PlanCode,
+  isTrialEnabled,
+  getTrialDays,
+} from "@/lib/stripe/plans";
 import { cn } from "@/lib/utils";
 
 export default function BillingSetupPage() {
+  const [selectedPlan, setSelectedPlan] = useState<PlanCode>("growth");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const trialEnabled = isTrialEnabled();
   const trialDays = getTrialDays();
 
-  const livePlanCode = "growth" as const;
-  const livePlan = PLANS[livePlanCode];
+  const visiblePlans: [PlanCode, (typeof PLANS)[PlanCode]][] = [
+    ["growth", PLANS.growth],
+    ["pro", PLANS.pro],
+  ];
 
   const handleSubscribe = async () => {
     setIsLoading(true);
@@ -25,7 +33,7 @@ export default function BillingSetupPage() {
       const response = await fetch("/api/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planCode: livePlanCode }),
+        body: JSON.stringify({ planCode: selectedPlan }),
       });
 
       const data = await response.json();
@@ -48,18 +56,19 @@ export default function BillingSetupPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-surface-50 to-surface-100">
-      <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6 lg:px-8">
         <div className="mb-12 text-center">
           <div className="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-600 shadow-[0_12px_30px_rgba(2,132,199,0.24)]">
             <span className="text-2xl font-bold text-white">E</span>
           </div>
 
           <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl">
-            Start your EnCare subscription
+            Choose your EnCare plan
           </h1>
 
           <p className="mx-auto mt-4 max-w-2xl text-lg text-slate-600">
-            One simple plan with all core care management features included.
+            Pick the plan that fits your organisation best. Upgrade anytime as
+            your care service grows.
           </p>
 
           {trialEnabled && (
@@ -78,62 +87,83 @@ export default function BillingSetupPage() {
           </div>
         )}
 
-        <div className="mx-auto max-w-2xl">
-          <div className="relative">
-            <div className="absolute -top-4 left-1/2 z-10 -translate-x-1/2">
-              <span className="inline-block rounded-full bg-primary-600 px-4 py-1 text-sm font-medium text-white shadow-lg">
-                Active Plan
-              </span>
-            </div>
+        <div className="mx-auto grid max-w-4xl gap-6 md:grid-cols-2">
+          {visiblePlans.map(([code, plan]) => {
+            const isSelected = selectedPlan === code;
+            const isPopular = code === "growth";
 
-            <Card
-              variant="elevated"
-              padding="lg"
-              className={cn(
-                "h-full border-primary-200 ring-2 ring-primary-500 ring-offset-2",
-              )}
-            >
-              <div className="flex h-full flex-col">
-                <div className="mb-6">
-                  <h3 className="mb-1 text-xl font-semibold text-slate-900">
-                    {livePlan.name}
-                  </h3>
-                  <p className="text-sm text-slate-500">
-                    {livePlan.description}
-                  </p>
-                </div>
-
-                <div className="mb-6">
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-4xl font-bold text-slate-900">
-                      {livePlan.currency === "GBP" ? "£" : "$"}
-                      {livePlan.price}
+            return (
+              <div key={code} className="relative">
+                {isPopular && (
+                  <div className="absolute -top-4 left-1/2 z-10 -translate-x-1/2">
+                    <span className="inline-block rounded-full bg-primary-600 px-4 py-1 text-sm font-medium text-white shadow-lg">
+                      Most Popular
                     </span>
-                    <span className="text-slate-500">/{livePlan.interval}</span>
                   </div>
+                )}
 
-                  {trialEnabled && (
-                    <p className="mt-1 text-sm text-primary-600">
-                      {trialDays} days free
-                    </p>
+                <Card
+                  variant={isSelected ? "elevated" : "default"}
+                  padding="lg"
+                  className={cn(
+                    "h-full cursor-pointer transition-all duration-300",
+                    isSelected && "ring-2 ring-primary-500 ring-offset-2",
+                    isPopular && "scale-[1.01]",
                   )}
-                </div>
+                  onClick={() => setSelectedPlan(code)}
+                >
+                  <div className="flex h-full flex-col">
+                    <div className="mb-6">
+                      <h3 className="mb-1 text-xl font-semibold text-slate-900">
+                        {plan.name}
+                      </h3>
+                      <p className="text-sm text-slate-500">
+                        {plan.description}
+                      </p>
+                    </div>
 
-                <ul className="mb-8 flex-grow space-y-3">
-                  {livePlan.features.map((feature, index) => (
-                    <li key={index} className="flex items-start gap-3">
-                      <Check className="mt-0.5 h-5 w-5 shrink-0 text-primary-600" />
-                      <span className="text-sm text-slate-600">{feature}</span>
-                    </li>
-                  ))}
-                </ul>
+                    <div className="mb-6">
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-4xl font-bold text-slate-900">
+                          {plan.currency === "GBP" ? "£" : "$"}
+                          {plan.price}
+                        </span>
+                        <span className="text-slate-500">/{plan.interval}</span>
+                      </div>
 
-                <div className="w-full rounded-xl bg-primary-100 py-3 text-center font-medium text-primary-700">
-                  Included plan
-                </div>
+                      {trialEnabled && (
+                        <p className="mt-1 text-sm text-primary-600">
+                          {trialDays} days free
+                        </p>
+                      )}
+                    </div>
+
+                    <ul className="mb-8 flex-grow space-y-3">
+                      {plan.features.map((feature, index) => (
+                        <li key={index} className="flex items-start gap-3">
+                          <Check className="mt-0.5 h-5 w-5 shrink-0 text-primary-600" />
+                          <span className="text-sm text-slate-600">
+                            {feature}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+
+                    <div
+                      className={cn(
+                        "w-full rounded-xl py-3 text-center font-medium transition-colors",
+                        isSelected
+                          ? "bg-primary-100 text-primary-700"
+                          : "bg-surface-100 text-slate-500",
+                      )}
+                    >
+                      {isSelected ? "Selected" : "Select plan"}
+                    </div>
+                  </div>
+                </Card>
               </div>
-            </Card>
-          </div>
+            );
+          })}
         </div>
 
         <div className="mt-12 text-center">
