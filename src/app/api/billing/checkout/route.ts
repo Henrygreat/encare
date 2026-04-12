@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getOrCreateStripeCustomer, createCheckoutSession } from '@/lib/stripe/server'
-import { PLANS, type PlanCode } from '@/lib/stripe/config'
+import { getOrCreateStripeCustomer, createBillingPortalSession } from '@/lib/stripe/server'
 
-export async function POST(request: NextRequest) {
+export async function POST(_request: NextRequest) {
   try {
     const supabase = createClient()
 
-    // Get authenticated user
     const {
       data: { user: authUser },
       error: authError,
@@ -20,7 +18,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get user profile with organisation
     const { data: userData, error: userError } = await supabase
       .from('users')
       .select('*, organisations(*)')
@@ -34,7 +31,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Only admins can manage billing
     if (userData.role !== 'admin') {
       return NextResponse.json(
         { error: 'Only administrators can manage billing' },
@@ -42,52 +38,42 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const body = await request.json()
-    const { planCode } = body as { planCode: PlanCode }
+    const organisation = userData.organisations as {
+      id: string
+      name: string
+      stripe_customer_id?: string | null
+    }
 
-    if (!planCode || !PLANS[planCode]) {
+    if (!organisation?.id) {
       return NextResponse.json(
-        { error: 'Invalid plan selected' },
-        { status: 400 }
+        { error: 'Organisation not found' },
+        { status: 404 }
       )
     }
 
-    const plan = PLANS[planCode]
+    const customerId = organisation.stripe_customer_id
+      ? organisation.stripe_customer_id
+      : await getOrCreateStripeCustomer(
+          organisation.id,
+          userData.email,
+          organisation.name
+        )
 
-    if (!plan.priceId) {
-      return NextResponse.json(
-        { error: 'Plan price not configured' },
-        { status: 500 }
-      )
-    }
+    const origin =
+      process.env.NEXT_PUBLIC_APP_URL ||
+      _request.headers.get('origin') ||
+      ''
 
-    const organisation = userData.organisations as { id: string; name: string }
-
-    // Get or create Stripe customer
-    const customerId = await getOrCreateStripeCustomer(
-      organisation.id,
-      userData.email,
-      organisation.name
-    )
-
-    // Create checkout session
-    const origin = request.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL || ''
-    const successUrl = `${origin}/billing/success?session_id={CHECKOUT_SESSION_ID}`
-    const cancelUrl = `${origin}/billing/cancel`
-
-    const session = await createCheckoutSession(
+    const portalSession = await createBillingPortalSession(
       customerId,
-      organisation.id,
-      plan.priceId,
-      successUrl,
-      cancelUrl
+      `${origin}/dashboard/billing`
     )
 
-    return NextResponse.json({ url: session.url })
+    return NextResponse.json({ url: portalSession.url })
   } catch (error) {
-    console.error('Checkout error:', error)
+    console.error('Portal error:', error)
     return NextResponse.json(
-      { error: 'Failed to create checkout session' },
+      { error: 'Failed to create portal session' },
       { status: 500 }
     )
   }
