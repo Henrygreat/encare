@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getOrCreateStripeCustomer, createBillingPortalSession } from '@/lib/stripe/server'
+import {
+  getOrCreateStripeCustomer,
+  createCustomerPortalSession,
+} from '@/lib/stripe/server'
 
-export async function POST(_request: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
     const supabase = createClient()
 
@@ -12,10 +15,7 @@ export async function POST(_request: NextRequest) {
     } = await supabase.auth.getUser()
 
     if (authError || !authUser) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const { data: userData, error: userError } = await supabase
@@ -25,10 +25,7 @@ export async function POST(_request: NextRequest) {
       .single()
 
     if (userError || !userData) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
     if (userData.role !== 'admin') {
@@ -41,8 +38,7 @@ export async function POST(_request: NextRequest) {
     const organisation = userData.organisations as {
       id: string
       name: string
-      stripe_customer_id?: string | null
-    }
+    } | null
 
     if (!organisation?.id) {
       return NextResponse.json(
@@ -51,25 +47,22 @@ export async function POST(_request: NextRequest) {
       )
     }
 
-    const customerId = organisation.stripe_customer_id
-      ? organisation.stripe_customer_id
-      : await getOrCreateStripeCustomer(
-          organisation.id,
-          userData.email,
-          organisation.name
-        )
-
-    const origin =
-      process.env.NEXT_PUBLIC_APP_URL ||
-      _request.headers.get('origin') ||
-      ''
-
-    const portalSession = await createBillingPortalSession(
-      customerId,
-      `${origin}/dashboard/billing`
+    const customerId = await getOrCreateStripeCustomer(
+      organisation.id,
+      userData.email,
+      organisation.name
     )
 
-    return NextResponse.json({ url: portalSession.url })
+    const origin =
+      request.headers.get('origin') ||
+      process.env.NEXT_PUBLIC_APP_URL ||
+      ''
+
+    const returnUrl = `${origin}/dashboard/billing`
+
+    const session = await createCustomerPortalSession(customerId, returnUrl)
+
+    return NextResponse.json({ url: session.url })
   } catch (error) {
     console.error('Portal error:', error)
     return NextResponse.json(
