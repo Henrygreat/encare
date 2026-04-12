@@ -25,6 +25,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (userError || !userData) {
+      console.error('Portal user lookup error:', userError)
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
@@ -35,22 +36,40 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const organisation = userData.organisations as {
-      id: string
-      name: string
-    } | null
+    const organisationRaw = userData.organisations as
+      | { id: string; name: string }
+      | Array<{ id: string; name: string }>
+      | null
+
+    const organisation = Array.isArray(organisationRaw)
+      ? organisationRaw[0]
+      : organisationRaw
 
     if (!organisation?.id) {
+      console.error('Portal organisation missing:', {
+        userId: authUser.id,
+        organisations: userData.organisations,
+      })
+
       return NextResponse.json(
         { error: 'Organisation not found' },
         { status: 404 }
       )
     }
 
+    const email = userData.email || authUser.email
+
+    if (!email) {
+      return NextResponse.json(
+        { error: 'No billing email available for this account' },
+        { status: 400 }
+      )
+    }
+
     const customerId = await getOrCreateStripeCustomer(
       organisation.id,
-      userData.email,
-      organisation.name
+      email,
+      organisation.name || 'Organisation'
     )
 
     const origin =
@@ -64,9 +83,15 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ url: session.url })
   } catch (error) {
-    console.error('Portal error:', error)
+    console.error('Portal error FULL:', error)
+
     return NextResponse.json(
-      { error: 'Failed to create portal session' },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Failed to create portal session',
+      },
       { status: 500 }
     )
   }
