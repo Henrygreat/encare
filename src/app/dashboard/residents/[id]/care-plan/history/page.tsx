@@ -166,8 +166,8 @@ export default function CarePlanHistoryPage({
                         </p>
                       </div>
                     </div>
-                    {version.status === 'active' && (
-                      <Link href={`/dashboard/residents/${params.id}/care-plan`}>
+                    {(version.status === 'active' || version.status === 'archived') && (
+                      <Link href={`/dashboard/residents/${params.id}/care-plan/${version.id}`}>
                         <Button variant="ghost" size="sm">
                           View
                         </Button>
